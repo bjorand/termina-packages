@@ -46,7 +46,7 @@ func TestValidPackageAndIndex(t *testing.T) {
 		t.Fatalf("packages : %+v", pkgs)
 	}
 	out := filepath.Join(t.TempDir(), "site")
-	if err := writeSite(out, pkgs); err != nil {
+	if err := writeSite(out, pkgs, "https://github.com/x/y", "01/01/2026"); err != nil {
 		t.Fatal(err)
 	}
 	src, err := os.ReadFile(filepath.Join(out, "index.lua"))
@@ -70,6 +70,19 @@ func TestValidPackageAndIndex(t *testing.T) {
 	app := idx.Hash["packages"].(*luaTable).Hash["app"].(*luaTable)
 	if app.Hash["description"] != `Une "app"` {
 		t.Fatalf("description : %q", app.Hash["description"])
+	}
+	// La page : app détectée par son en-tête, textes échappés, liens vers les sources.
+	if a := pkgs[0].Apps; len(a) != 1 || a[0].Name != "App" {
+		t.Fatalf("apps : %+v", a)
+	}
+	page, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`id="fiche-hello"`, `Une &#34;app&#34;`, "https://github.com/x/y/blob/main/packages/hello/hello.lua", `data-types="app"`, `data-types="commande"`} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("index.html sans %q", want)
+		}
 	}
 	// Déterministe.
 	if again := indexLua(pkgs); again != string(src) {

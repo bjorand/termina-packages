@@ -16,13 +16,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Limites de la machine : un script de plus de 64 Ko ne se charge pas, et
@@ -49,6 +49,12 @@ type Package struct {
 	Name, Version, Description, Author, License string
 	Bin, Depends                                []string
 	Files                                       []File
+	Apps                                        []App // pour la page seulement : la machine les détecte elle-même
+}
+
+// App : fichier dont l'en-tête porte « -- @app Nom » (bureau TERMINA WIN).
+type App struct {
+	File, Name, Icon string
 }
 
 func main() {
@@ -56,6 +62,7 @@ func main() {
 	out := flag.String("out", "", "dossier du site à générer (vide : valider seulement)")
 	prev := flag.String("prev", "", "index.lua publié précédemment (contrôle des numéros de version)")
 	luac := flag.String("luac", "", "compilateur pour vérifier la syntaxe, ex. « luac5.4 » (vide : pas de vérification)")
+	repo := flag.String("repo", "https://github.com/bjorand/termina-packages", "dépôt GitHub (liens vers les sources)")
 	flag.Parse()
 
 	pkgs, err := loadAll(*pkgDir, *luac)
@@ -67,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 	if *out != "" {
-		if err := writeSite(*out, pkgs); err != nil {
+		if err := writeSite(*out, pkgs, *repo, time.Now().UTC().Format("02/01/2006")); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -200,6 +207,9 @@ func loadPackage(dir, luac string) (*Package, error) {
 				errs = append(errs, fail("%s : %v", name, err))
 			}
 		}
+		if app, ok := appHeader(name, data); ok {
+			p.Apps = append(p.Apps, app)
+		}
 		sum := sha1.Sum(data)
 		p.Files = append(p.Files, File{Path: name, Size: int64(len(data)), SHA1: hex.EncodeToString(sum[:]), data: data})
 		total += int64(len(data))
@@ -226,6 +236,31 @@ func loadPackage(dir, luac string) (*Package, error) {
 		return nil, err
 	}
 	return p, nil
+}
+
+// appHeader lit l'en-tête comme wm::scanApps : « -- @app » dans les 255 premiers octets.
+func appHeader(file string, data []byte) (App, bool) {
+	if !strings.HasSuffix(file, ".lua") {
+		return App{}, false
+	}
+	head := string(data[:min(len(data), 255)])
+	field := func(tag string) string {
+		i := strings.Index(head, tag)
+		if i < 0 {
+			return ""
+		}
+		v, _, _ := strings.Cut(head[i+len(tag):], "\n")
+		return strings.TrimSpace(v)
+	}
+	name := field("-- @app ")
+	if name == "" {
+		return App{}, false
+	}
+	icon := field("-- @icon ")
+	if icon == "" {
+		icon = "lua"
+	}
+	return App{File: file, Name: name, Icon: icon}, true
 }
 
 func (p *Package) hasFile(name string) bool {
@@ -357,7 +392,7 @@ func oldFingerprint(old *luaTable) string {
 
 // ------------------------------------------------------------------ site
 
-func writeSite(out string, pkgs []*Package) error {
+func writeSite(out string, pkgs []*Package, repo, date string) error {
 	if err := os.RemoveAll(out); err != nil {
 		return err
 	}
@@ -378,7 +413,11 @@ func writeSite(out string, pkgs []*Package) error {
 	if err := os.WriteFile(filepath.Join(out, ".nojekyll"), nil, 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(out, "index.html"), []byte(indexHTML(pkgs)), 0o644)
+	page, err := indexHTML(pkgs, repo, date)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(out, "index.html"), []byte(page), 0o644)
 }
 
 func luaList(xs []string) string {
@@ -414,20 +453,5 @@ func indexLua(pkgs []*Package) string {
 		b.WriteString("      },\n    },\n")
 	}
 	b.WriteString("  },\n}\n")
-	return b.String()
-}
-
-func indexHTML(pkgs []*Package) string {
-	var b strings.Builder
-	b.WriteString(`<!doctype html><meta charset="utf-8"><title>Packages TERMINA</title>
-<style>body{font:15px/1.5 monospace;background:#000;color:#3f3;max-width:60em;margin:2em auto;padding:0 1em}
-a{color:#7f7}td{padding:.2em 1em .2em 0;vertical-align:top}</style>
-<h1>Packages TERMINA</h1><p>Sur la machine : <code>pkg update</code> puis <code>pkg install &lt;nom&gt;</code>.</p><table>
-`)
-	for _, p := range pkgs {
-		fmt.Fprintf(&b, "<tr><td>%s</td><td>%s</td><td>%s</td></tr>\n",
-			html.EscapeString(p.Name), html.EscapeString(p.Version), html.EscapeString(p.Description))
-	}
-	b.WriteString("</table>\n")
 	return b.String()
 }

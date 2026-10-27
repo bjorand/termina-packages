@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logithèque TERMINA</title>
+<meta name="description" content="Le catalogue des logiciels Lua pour TERMINA : {{.Count}} logiciel(s) à installer d'une commande avec pkg.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Monoton&family=Righteous&family=Shrikhand&family=VT323&family=Work+Sans:ital,wght@0,400;0,600;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --creme: #f4e7c9;
+  --creme-2: #ead7ac;
+  --beige: #dcd6bd;
+  --brun: #4a2511;
+  --brun-2: #7a3b16;
+  --orange: #e2611d;
+  --orange-2: #f08a2c;
+  --moutarde: #e8ad1f;
+  --bleu: #1d3f86;
+  --rouge: #c8322a;
+  --phosphore: #49ff7a;
+  --encre: #2b170a;
+  --ecran: #0a120c;
+  --rayon: 28px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--creme); color: var(--encre);
+  font: 17px/1.6 "Work Sans", system-ui, sans-serif; overflow-x: hidden;
+}
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 100;
+  opacity: .18; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+}
+a { color: var(--brun-2); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+a:hover { color: var(--orange); }
+code, pre { font-family: "VT323", ui-monospace, monospace; font-size: 1.15em; }
+:not(pre) > code { background: var(--brun); color: var(--moutarde); padding: 0 .35em; border-radius: 6px; white-space: nowrap; }
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--bleu); outline-offset: 3px; }
+
+.bandeau {
+  background: var(--brun); color: var(--creme);
+  font: 600 12px/1 "Work Sans", sans-serif; letter-spacing: .18em; text-transform: uppercase;
+  display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 10px 24px;
+}
+.bandeau .tricolore { display: inline-flex; height: 10px; width: 36px; margin-right: 10px; vertical-align: -1px; border-radius: 2px; overflow: hidden; }
+.bandeau .tricolore i { flex: 1; }
+.bandeau .tricolore i:nth-child(1) { background: #2b4fb3; }
+.bandeau .tricolore i:nth-child(2) { background: #fff; }
+.bandeau .tricolore i:nth-child(3) { background: var(--rouge); }
+nav.haut {
+  position: sticky; top: 0; z-index: 50; background: var(--creme); border-bottom: 4px solid var(--brun);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 24px;
+}
+nav.haut .marque { font: 28px/1 "Monoton", cursive; color: var(--orange); text-decoration: none; letter-spacing: .04em; }
+nav.haut .marque small { font: 15px/1 "Righteous"; color: var(--brun); letter-spacing: .1em; margin-left: 8px; }
+nav.haut ul { list-style: none; display: flex; gap: 6px; margin: 0; padding: 0; flex-wrap: wrap; }
+nav.haut a.lien { font: 15px/1 "Righteous", sans-serif; text-decoration: none; color: var(--brun); padding: 9px 16px; border-radius: 999px; border: 2px solid transparent; }
+nav.haut a.lien:hover { border-color: var(--brun); background: var(--moutarde); }
+
+/* ===== héros ===== */
+.heros {
+  position: relative; overflow: hidden; padding: 64px 24px 120px;
+  background:
+    radial-gradient(circle at 78% 46%, var(--creme) 0 17%, transparent 17.2%),
+    repeating-conic-gradient(from 0deg at 78% 46%, var(--moutarde) 0 7.5deg, var(--orange-2) 7.5deg 15deg);
+}
+.heros-grille { max-width: 1200px; margin: 0 auto; position: relative; z-index: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+.carton { background: var(--creme); border: 4px solid var(--brun); border-radius: var(--rayon); padding: 36px 36px 30px; box-shadow: 12px 12px 0 var(--brun); }
+.surtitre { display: inline-block; font: 600 13px/1 "Work Sans"; letter-spacing: .22em; text-transform: uppercase; background: var(--bleu); color: var(--creme); padding: 8px 14px; border-radius: 999px; }
+h1.titre { font: clamp(44px, 6.4vw, 84px)/1 "Shrikhand", cursive; color: var(--orange); margin: 18px 0 6px; text-shadow: 4px 4px 0 var(--brun); }
+.slogan { font: clamp(20px, 2.4vw, 26px)/1.25 "Righteous", sans-serif; color: var(--brun); margin: 8px 0 16px; }
+.slogan em { color: var(--orange); font-style: normal; }
+.chapo { margin: 0 0 22px; max-width: 34em; }
+.compteurs { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 24px; padding: 0; list-style: none; }
+.compteurs li { flex: 1 1 0; min-width: 5.2em; border: 3px solid var(--brun); border-radius: 18px; padding: 8px 14px; background: var(--creme-2); line-height: 1.1; }
+.compteurs b { display: block; font: 30px/1 "Righteous"; color: var(--orange); }
+.compteurs span { font: 600 12px/1 "Work Sans"; letter-spacing: .12em; text-transform: uppercase; color: var(--brun); }
+.boutons { display: flex; gap: 14px; flex-wrap: wrap; }
+.bouton {
+  font: 18px/1 "Righteous", sans-serif; text-decoration: none; padding: 16px 26px; border-radius: 999px;
+  border: 3px solid var(--brun); background: var(--orange); color: var(--creme); box-shadow: 5px 5px 0 var(--brun);
+  transition: transform .12s, box-shadow .12s;
+}
+.bouton.clair { background: var(--creme); color: var(--brun); }
+.bouton:hover { transform: translate(-2px,-2px); box-shadow: 7px 7px 0 var(--brun); color: var(--creme); }
+.bouton.clair:hover { color: var(--brun); }
+.bandes { height: 66px; display: grid; grid-template-rows: repeat(3, 1fr); }
+.bandes i:nth-child(1) { background: var(--moutarde); }
+.bandes i:nth-child(2) { background: var(--orange); }
+.bandes i:nth-child(3) { background: var(--brun); }
+.heros .bandes { position: absolute; left: 0; right: 0; bottom: 0; }
+
+/* ===== la machine ===== */
+.machine-zone { display: flex; flex-direction: column; align-items: center; }
+.machine {
+  width: min(540px, 100%); background: linear-gradient(160deg, #ebe6cf, var(--beige) 55%, #c6bf9f);
+  border-radius: 34px; padding: 26px 26px 22px; border: 3px solid #a69c78;
+  box-shadow: 18px 18px 0 rgba(74,37,17,.85), inset -6px -8px 0 rgba(0,0,0,.08), inset 4px 4px 0 rgba(255,255,255,.6);
+}
+.lunette { background: #3c3a33; border-radius: 22px; padding: 14px; box-shadow: inset 0 4px 10px rgba(0,0,0,.6); }
+.ecran {
+  position: relative; aspect-ratio: 3 / 2; border-radius: 16px; overflow: hidden; cursor: text;
+  background: radial-gradient(ellipse at center, #0f1f13, var(--ecran) 75%);
+  color: var(--phosphore); font: 18px/1.08 "VT323", monospace; text-shadow: 0 0 6px rgba(73,255,122,.7);
+}
+.ecran::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(transparent 0 2px, rgba(0,0,0,.28) 2px 3px); box-shadow: inset 0 0 50px rgba(0,0,0,.75);
+}
+.sortie { position: absolute; inset: 0; padding: 12px 14px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; scrollbar-width: none; }
+.sortie::-webkit-scrollbar { display: none; }
+.sortie .ok { color: #9dff9d; } .sortie .warn { color: #ffd23e; text-shadow: 0 0 6px rgba(255,210,62,.6); }
+.sortie .err { color: #ff6b5b; text-shadow: 0 0 6px rgba(255,107,91,.6); } .sortie .titre { color: #5ff; text-shadow: 0 0 6px rgba(85,255,255,.6); }
+.ligne-saisie { display: flex; }
+.ligne-saisie input { flex: none; width: .5ch; max-width: calc(100% - 3ch); background: transparent; border: 0; outline: 0; padding: 0; color: inherit; font: inherit; text-shadow: inherit; caret-color: transparent; }
+.curseur { display: inline-block; width: .6em; background: var(--phosphore); animation: clignote 1s steps(1) infinite; }
+@keyframes clignote { 50% { opacity: 0; } }
+.facade { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding: 0 6px; }
+.facade .nom { font: 22px/1 "Righteous"; letter-spacing: .3em; color: #8d8467; }
+.facade .voyants { display: flex; gap: 14px; align-items: center; font: 600 10px/1 "Work Sans"; letter-spacing: .14em; color: #8d8467; }
+.voyant { width: 10px; height: 10px; border-radius: 50%; background: #5b4a2c; display: inline-block; margin-right: 5px; vertical-align: -1px; transition: background .1s; }
+.voyant.on { background: var(--orange-2); box-shadow: 0 0 8px var(--orange-2); }
+.voyant.net.on { background: var(--phosphore); box-shadow: 0 0 8px var(--phosphore); }
+.socle { width: 62%; height: 46px; background: linear-gradient(#c79b62, #a87a45); clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%); border-radius: 0 0 10px 10px; margin-top: -2px; }
+.indice { margin-top: 18px; font: 15px/1.3 "Righteous"; color: var(--brun); background: var(--creme); padding: 8px 16px; border-radius: 999px; border: 2px solid var(--brun); text-align: center; }
+.indice button { border: 0; padding: 0 .35em; border-radius: 6px; background: var(--brun); color: var(--moutarde); font: 1.15em "VT323", monospace; }
+.indice button:hover { background: var(--orange); color: var(--creme); }
+
+/* ===== sections ===== */
+section { padding: 88px 24px; }
+.cadre { max-width: 1200px; margin: 0 auto; }
+.titre-section { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin: 0 0 32px; }
+.titre-section .numero {
+  font: 30px/1 "Righteous"; color: var(--creme); background: var(--orange); width: 64px; height: 64px; border-radius: 50%;
+  display: grid; place-items: center; flex: none; border: 3px solid var(--brun); box-shadow: 4px 4px 0 var(--brun); align-self: center;
+}
+.titre-section h2 { font: clamp(36px, 5vw, 60px)/1 "Shrikhand", cursive; margin: 0; color: var(--brun); }
+.titre-section p { flex-basis: 100%; margin: 6px 0 0 82px; font-size: 19px; max-width: 42em; }
+
+/* ===== catalogue ===== */
+.outils { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 28px; }
+.recherche { flex: 1 1 320px; position: relative; }
+.recherche input {
+  width: 100%; font: 26px/1 "VT323", monospace; padding: 14px 20px 14px 52px; border-radius: 999px;
+  border: 3px solid var(--brun); background: var(--ecran); color: var(--phosphore); box-shadow: 5px 5px 0 var(--brun);
+  text-shadow: 0 0 6px rgba(73,255,122,.6);
+}
+.recherche input::placeholder { color: #3f8f55; text-shadow: none; }
+.recherche::before { content: "A>"; position: absolute; left: 18px; top: 50%; transform: translateY(-50%); font: 26px/1 "VT323"; color: var(--phosphore); pointer-events: none; }
+.filtres { display: flex; gap: 8px; flex-wrap: wrap; }
+.filtres button {
+  font: 16px/1 "Righteous"; padding: 11px 16px; border-radius: 999px; border: 3px solid var(--brun);
+  background: var(--creme); color: var(--brun);
+}
+.filtres button[aria-pressed="true"] { background: var(--brun); color: var(--moutarde); }
+.filtres button:hover { background: var(--moutarde); color: var(--brun); }
+.resultat { font: 600 13px/1 "Work Sans"; letter-spacing: .14em; text-transform: uppercase; color: var(--brun-2); margin: -10px 0 22px; }
+
+.grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 26px; }
+.carte {
+  border: 3px solid var(--brun); border-radius: var(--rayon); padding: 22px 22px 18px; background: var(--creme-2);
+  box-shadow: 8px 8px 0 var(--brun); position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 12px;
+  transition: transform .12s, box-shadow .12s;
+}
+.carte:hover { transform: translate(-2px,-2px); box-shadow: 10px 10px 0 var(--brun); }
+.carte.c1 { background: var(--moutarde); } .carte.c2 { background: var(--orange-2); } .carte.c3 { background: var(--creme); }
+.carte::after { content: ""; position: absolute; right: -40px; top: -40px; width: 120px; height: 120px; border-radius: 50%; border: 14px solid rgba(74,37,17,.12); pointer-events: none; }
+.carte-tete { display: flex; align-items: center; gap: 14px; }
+.disquette {
+  width: 54px; height: 54px; flex: none; border-radius: 8px 8px 8px 8px; background: var(--brun); position: relative;
+  display: grid; place-items: end center; padding-bottom: 5px; color: var(--brun); font: 22px/1 "VT323";
+}
+.disquette::before { content: ""; position: absolute; top: 0; left: 12px; right: 12px; height: 18px; background: #b9b3a0; border-radius: 0 0 3px 3px; }
+.disquette::after { content: ""; position: absolute; top: 3px; right: 17px; width: 6px; height: 12px; background: var(--brun); }
+.disquette span { background: var(--creme); width: 40px; height: 22px; border-radius: 3px; display: grid; place-items: center; text-transform: uppercase; }
+.carte h3 { margin: 0; font: 26px/1.05 "Righteous"; color: var(--brun); word-break: break-word; }
+.carte h3 a { color: inherit; text-decoration: none; }
+.carte h3 a::before { content: ""; position: absolute; inset: 0; z-index: 1; }
+.version { display: inline-block; margin-top: 4px; font: 600 12px/1 "Work Sans"; letter-spacing: .1em; background: var(--brun); color: var(--creme); padding: 5px 9px; border-radius: 999px; }
+.carte p { margin: 0; font-size: 16px; }
+.etiquettes { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+.etiquettes li { font: 600 11px/1 "Work Sans"; letter-spacing: .12em; text-transform: uppercase; border: 2px solid var(--brun); border-radius: 999px; padding: 5px 9px; background: rgba(244,231,201,.7); }
+.meta { font-size: 14px; color: var(--brun); opacity: .9; margin-top: auto; }
+.installer {
+  position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--ecran); color: var(--phosphore); border: 3px solid var(--brun); border-radius: 14px; padding: 6px 6px 6px 14px;
+  font: 22px/1 "VT323", monospace; text-shadow: 0 0 5px rgba(73,255,122,.5);
+}
+.carte .installer { font-size: 20px; }
+.installer code { background: none; color: inherit; padding: 0; font-size: 1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.copier { flex: none; border: 2px solid var(--phosphore); background: transparent; color: var(--phosphore); border-radius: 8px; font: 16px/1 "VT323"; padding: 5px 9px; text-shadow: inherit; }
+.copier:hover { background: var(--phosphore); color: var(--ecran); }
+.vide { display: none; text-align: center; padding: 48px 20px; border: 3px dashed var(--brun); border-radius: var(--rayon); font: 22px/1.3 "Righteous"; color: var(--brun); }
+.vide.visible { display: block; }
+
+/* ===== fiche d'un package ===== */
+dialog {
+  width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 4px solid var(--brun);
+  border-radius: var(--rayon); background: var(--creme); color: var(--encre); box-shadow: 14px 14px 0 var(--brun);
+}
+dialog::backdrop { background: rgba(43,23,10,.6); backdrop-filter: blur(2px); }
+.fiche-tete { background: var(--brun); color: var(--creme); padding: 26px 28px 22px; display: flex; gap: 18px; align-items: center; position: sticky; top: 0; z-index: 2; }
+.fiche-tete h2 { margin: 0; font: clamp(30px, 5vw, 44px)/1 "Shrikhand", cursive; color: var(--moutarde); word-break: break-word; }
+.fiche-tete .version { background: var(--orange); }
+.fiche-tete .disquette { background: var(--orange); }
+.fiche-tete .disquette::after { background: var(--orange); }
+.fermer { margin-left: auto; align-self: flex-start; width: 44px; height: 44px; flex: none; border-radius: 50%; border: 3px solid var(--creme); background: transparent; color: var(--creme); font: 24px/1 "Righteous"; }
+.fermer:hover { background: var(--orange); }
+.fiche-corps { padding: 24px 28px 30px; }
+.fiche-corps > p { font-size: 19px; margin: 0 0 18px; }
+.fiche-corps h4 { font: 21px/1.2 "Righteous"; color: var(--brun-2); margin: 26px 0 10px; }
+.tableau { overflow-x: auto; border: 3px solid var(--brun); border-radius: 20px; background: #fbf3df; }
+table { border-collapse: collapse; width: 100%; font-size: 15.5px; }
+th { background: var(--brun); color: var(--moutarde); text-align: left; font: 16px/1.2 "Righteous"; padding: 10px 14px; }
+td { padding: 9px 14px; border-top: 2px dashed rgba(74,37,17,.25); vertical-align: top; }
+tr:nth-child(even) td { background: rgba(232,173,31,.12); }
+td.cle { white-space: nowrap; font: 15px/1.3 "Righteous"; color: var(--brun); width: 1%; }
+td.num, td.sha { white-space: nowrap; }
+td.sha code { font-size: 1.05em; }
+pre {
+  background: var(--ecran); color: var(--phosphore); border-radius: 18px; padding: 16px 20px; overflow-x: auto; line-height: 1.2;
+  border: 4px solid var(--brun); box-shadow: 6px 6px 0 var(--moutarde); text-shadow: 0 0 5px rgba(73,255,122,.45); margin: 12px 0 18px;
+}
+pre .c { color: #7fa88a; }
+.liens { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+.liens .bouton { font-size: 16px; padding: 12px 20px; }
+.pastille { display: inline-block; margin: 0 6px 6px 0; }
+.pastille a, .pastille span { display: inline-block; font: 15px/1 "Righteous"; padding: 7px 12px; border-radius: 999px; border: 2px solid var(--brun); background: var(--creme-2); color: var(--brun); text-decoration: none; }
+.pastille a:hover { background: var(--moutarde); }
+
+/* ===== mode d'emploi & publier ===== */
+.emploi { background: var(--brun); color: var(--creme); }
+.emploi .titre-section h2 { color: var(--moutarde); }
+.emploi .titre-section .numero { background: var(--moutarde); color: var(--brun); border-color: var(--creme); box-shadow: 4px 4px 0 var(--orange); }
+.etapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 36px; }
+.etape { border: 3px solid var(--moutarde); border-radius: var(--rayon); padding: 22px 24px; background: rgba(255,255,255,.03); }
+.etape .n { font: 46px/1 "Righteous"; color: var(--orange-2); }
+.etape code { font-size: 1.3em; }
+.etape p { margin: 10px 0 0; font-size: 15.5px; opacity: .92; }
+.emploi pre { box-shadow: 6px 6px 0 var(--orange); border-color: var(--creme); }
+.publier { background: var(--bleu); color: var(--creme); }
+.publier .titre-section h2 { color: var(--creme); }
+.publier .titre-section .numero { background: var(--moutarde); color: var(--brun); border-color: var(--creme); box-shadow: 4px 4px 0 var(--orange); }
+.publier a { color: var(--moutarde); }
+.publier-grille { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+.publier ol { margin: 0; padding-left: 1.4em; font-size: 18px; }
+.publier li { margin-bottom: 12px; }
+.publier li::marker { font: 22px "Righteous"; color: var(--moutarde); }
+.publier :not(pre) > code { background: var(--creme); color: var(--brun); }
+.publier pre { border-color: var(--creme); }
+.publier .bouton { display: inline-block; margin-top: 12px; }
+
+footer { background: var(--brun); color: var(--creme); padding: 56px 24px 40px; text-align: center; }
+footer .logo-pied { font: clamp(40px, 8vw, 84px)/1 "Monoton"; color: var(--orange); }
+footer p { margin: 12px auto; max-width: 40em; }
+footer a { color: var(--moutarde); }
+footer .tampon { display: inline-block; margin-top: 14px; border: 3px solid var(--moutarde); color: var(--moutarde); border-radius: 14px; padding: 10px 18px; font: 15px/1.3 "Righteous"; letter-spacing: .12em; transform: rotate(-3deg); text-transform: uppercase; }
+
+@media (max-width: 900px) {
+  .heros { padding: 36px 16px 110px; background:
+    radial-gradient(circle at 50% 72%, var(--creme) 0 14%, transparent 14.2%),
+    repeating-conic-gradient(from 0deg at 50% 72%, var(--moutarde) 0 7.5deg, var(--orange-2) 7.5deg 15deg); }
+  .heros-grille, .publier-grille { grid-template-columns: minmax(0, 1fr); }
+  .carton { padding: 26px 20px; box-shadow: 8px 8px 0 var(--brun); }
+  section { padding: 60px 16px; }
+  .titre-section p { margin-left: 0; }
+  nav.haut { padding: 10px 16px; }
+  nav.haut ul { display: none; }
+  .bandeau { padding: 10px 16px; }
+  .machine { padding: 16px 16px 14px; border-radius: 24px; box-shadow: 10px 10px 0 rgba(74,37,17,.85); }
+  .ecran { font-size: 15px; }
+  .grille { grid-template-columns: minmax(0, 1fr); }
+  .fiche-tete, .fiche-corps { padding-left: 18px; padding-right: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .curseur { animation: none; } html { scroll-behavior: auto; } .carte, .bouton { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="bandeau">
+  <span><span class="tricolore"><i></i><i></i><i></i></span>Commissariat au micro-calcul domestique</span>
+  <span>Catalogue des logiciels · édition du {{.Date}}</span>
+</div>
+
+<nav class="haut">
+  <a class="marque" href="#">TERMINA<small>LOGITHÈQUE</small></a>
+  <ul>
+    <li><a class="lien" href="#catalogue">Le catalogue</a></li>
+    <li><a class="lien" href="#emploi">Mode d'emploi</a></li>
+    <li><a class="lien" href="#publier">Publier</a></li>
+    <li><a class="lien" href="{{.Repo}}">GitHub</a></li>
+  </ul>
+</nav>
+
+<header class="heros">
+  <div class="heros-grille">
+    <div class="carton">
+      <span class="surtitre">Logiciels pour TERMINA</span>
+      <h1 class="titre">La Logithèque</h1>
+      <p class="slogan">Des programmes Lua écrits par la communauté, <em>installés d'une seule commande.</em></p>
+      <p class="chapo">Jeux, outils, applications de bureau : tout ce qui se trouve ici s'installe sur la machine avec <code>pkg install</code>, se met à jour avec <code>pkg upgrade</code> et repart avec <code>pkg remove</code>.</p>
+      <ul class="compteurs">
+        <li><b>{{.Count}}</b><span>logiciel{{if gt .Count 1}}s{{end}}</span></li>
+        <li><b>{{.Commands}}</b><span>commande{{if gt .Commands 1}}s{{end}}</span></li>
+        <li><b>{{.Apps}}</b><span>app{{if gt .Apps 1}}s{{end}} de bureau</span></li>
+      </ul>
+      <div class="boutons">
+        <a class="bouton" href="#catalogue">Parcourir le catalogue</a>
+        <a class="bouton clair" href="#publier">Publier un logiciel</a>
+      </div>
+    </div>
+
+    <div class="machine-zone">
+      <div class="machine">
+        <div class="lunette">
+          <div class="ecran" id="ecran">
+            <div class="sortie" id="sortie"><div id="journal"></div><label class="ligne-saisie"><span>A&gt;</span><input id="saisie" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Commande TERMINA"><span class="curseur">&nbsp;</span></label></div>
+          </div>
+        </div>
+        <div class="facade">
+          <span class="nom">TERMINA</span>
+          <span class="voyants"><span><i class="voyant" id="led-disk"></i>DISQUE</span><span><i class="voyant net on" id="led-net"></i>RÉSEAU</span></span>
+        </div>
+      </div>
+      <div class="socle"></div>
+      <span class="indice">Essayez : <button type="button" data-taper="pkg list">pkg list</button> <button type="button" data-taper="pkg info {{.Example}}">pkg info {{.Example}}</button> <button type="button" data-taper="pkg install {{.Example}}">pkg install {{.Example}}</button></span>
+    </div>
+  </div>
+  <div class="bandes"><i></i><i></i><i></i></div>
+</header>
+
+<section id="catalogue">
+  <div class="cadre">
+    <div class="titre-section">
+      <span class="numero">1</span>
+      <h2>Le catalogue</h2>
+      <p>Cliquez sur un logiciel pour lire sa fiche : commandes, fichiers, dépendances et sources.</p>
+    </div>
+
+    <div class="outils">
+      <label class="recherche"><span hidden>Rechercher</span><input id="filtre" type="search" placeholder="pkg search..." autocomplete="off" spellcheck="false"></label>
+      <div class="filtres" role="group" aria-label="Type de logiciel">
+        <button type="button" data-type="" aria-pressed="true">Tous</button>
+        <button type="button" data-type="commande" aria-pressed="false">Commandes</button>
+        <button type="button" data-type="app" aria-pressed="false">Apps</button>
+        <button type="button" data-type="module" aria-pressed="false">Modules</button>
+      </div>
+    </div>
+    <p class="resultat" id="resultat" aria-live="polite">{{.Count}} logiciel{{if gt .Count 1}}s{{end}}</p>
+
+    <div class="grille" id="grille">
+    {{- range $i, $p := .Packages}}
+      <article class="carte c{{mod $i 4}}" data-nom="{{$p.Name}}" data-texte="{{$p.SearchText}}" data-types="{{$p.KindAttr}}">
+        <div class="carte-tete">
+          <div class="disquette" aria-hidden="true"><span>{{$p.Initials}}</span></div>
+          <div>
+            <h3><a href="#p/{{$p.Name}}">{{$p.Name}}</a></h3>
+            <span class="version">v{{$p.Version}}</span>
+          </div>
+        </div>
+        <p>{{$p.Description}}</p>
+        <ul class="etiquettes">{{range $p.Kinds}}<li>{{.}}</li>{{end}}</ul>
+        <div class="meta">{{if $p.Author}}par {{$p.Author}} · {{end}}{{if $p.License}}{{$p.License}} · {{end}}{{$p.SizeLabel}}</div>
+        <div class="installer"><code title="pkg install {{$p.Name}}">pkg install {{$p.Name}}</code><button type="button" class="copier" data-copier="pkg install {{$p.Name}}">copier</button></div>
+      </article>
+    {{- end}}
+    </div>
+    <div class="vide" id="vide">Aucun logiciel ne répond à cette recherche.<br><a href="#publier">Et si vous l'écriviez ?</a></div>
+  </div>
+</section>
+
+<section class="emploi" id="emploi">
+  <div class="cadre">
+    <div class="titre-section">
+      <span class="numero">2</span>
+      <h2>Mode d'emploi</h2>
+      <p>La commande <code>pkg</code> est livrée avec TERMINA. Il faut juste que la machine soit connectée au réseau.</p>
+    </div>
+    <div class="etapes">
+      <div class="etape"><div class="n">01</div><code>pkg update</code><p>Récupère la liste des logiciels. À refaire de temps en temps pour voir les nouveautés.</p></div>
+      <div class="etape"><div class="n">02</div><code>pkg install nom</code><p>Télécharge le logiciel et ses dépendances dans <code>A:\pkg\nom\</code>, en vérifiant chaque fichier (SHA-1).</p></div>
+      <div class="etape"><div class="n">03</div><code>nom</code><p>Ses commandes se lancent au prompt, ses applications apparaissent sur le bureau <code>win</code>.</p></div>
+    </div>
+<pre><span class="c">A&gt;pkg</span>
+pkg update                  recuperer la liste des packages
+pkg list [-i]               packages disponibles (-i : installes)
+pkg search &lt;mot&gt;            chercher dans les noms et descriptions
+pkg info &lt;nom&gt;              details d'un package
+pkg install &lt;nom&gt;...        installer (avec ses dependances)
+pkg upgrade [nom...]        mettre a jour (tout par defaut)
+pkg remove [-f] &lt;nom&gt;...    desinstaller (-f : meme si un autre en depend)
+pkg url [adresse]           registre utilise</pre>
+  </div>
+</section>
+
+<section class="publier" id="publier">
+  <div class="cadre">
+    <div class="titre-section">
+      <span class="numero">3</span>
+      <h2>Publier un logiciel</h2>
+      <p>Tout le monde peut contribuer : un dossier, un manifeste, une pull request.</p>
+    </div>
+    <div class="publier-grille">
+      <ol>
+        <li>Forkez <a href="{{.Repo}}">le dépôt</a> et copiez <code>packages/{{.Example}}/</code> vers <code>packages/votre-nom/</code>.</li>
+        <li>Écrivez vos fichiers Lua : 64 Ko au plus chacun, Lua 5.4, et l'API de TERMINA (<code>term</code>, <code>key</code>, <code>fs</code>, <code>net</code>, <code>win</code>...).</li>
+        <li>Vérifiez avec <code>go run ./tools/mkindex</code>, puis ouvrez une pull request. La CI refait les vérifications.</li>
+        <li>Une fois fusionné, votre logiciel arrive ici et sur toutes les machines après un <code>pkg update</code>.</li>
+      </ol>
+      <div>
+<pre><span class="c">-- packages/snake2/package.lua</span>
+return {
+  name = "snake2",
+  version = "1.0.0",
+  description = "Snake en couleurs",
+  author = "Ada Lovelace",
+  license = "MIT",
+  bin = { "snake2" },      <span class="c">-- commandes A&gt;</span>
+  depends = { "tui" },     <span class="c">-- autres logiciels</span>
+}</pre>
+        <a class="bouton" href="{{.Repo}}/blob/main/CONTRIBUTING.md">Lire le guide du contributeur</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="logo-pied">TERMINA</div>
+  <p>La Logithèque est générée par <code>tools/mkindex</code> à chaque fusion sur <code>main</code>. Registre lu par la machine : <a href="index.lua">index.lua</a>.</p>
+  <p><a href="https://github.com/bjorand/termina">La machine</a> · <a href="{{.Repo}}">Le dépôt des logiciels</a></p>
+  <span class="tampon">Logiciels vérifiés par somme SHA-1</span>
+</footer>
+
+{{range .Packages}}
+<dialog id="fiche-{{.Name}}" aria-labelledby="titre-{{.Name}}">
+  <div class="fiche-tete">
+    <div class="disquette" aria-hidden="true"><span>{{.Initials}}</span></div>
+    <div><h2 id="titre-{{.Name}}">{{.Name}}</h2><span class="version">v{{.Version}}</span></div>
+    <button type="button" class="fermer" aria-label="Fermer">×</button>
+  </div>
+  <div class="fiche-corps">
+    <p>{{.Description}}</p>
+    <div class="installer"><code>A&gt;pkg install {{.Name}}</code><button type="button" class="copier" data-copier="pkg install {{.Name}}">copier</button></div>
+    <h4>Fiche</h4>
+    <div class="tableau"><table>
+      {{if .Author}}<tr><td class="cle">Auteur</td><td>{{.Author}}</td></tr>{{end}}
+      {{if .License}}<tr><td class="cle">Licence</td><td>{{.License}}</td></tr>{{end}}
+      <tr><td class="cle">Taille</td><td>{{.SizeLabel}} en {{len .Files}} fichier{{if gt (len .Files) 1}}s{{end}}</td></tr>
+      {{if .Bin}}<tr><td class="cle">Commandes</td><td>{{range .Bin}}<code>{{.}}</code> {{end}}</td></tr>{{end}}
+      {{if .Apps}}<tr><td class="cle">Bureau</td><td>{{range .Apps}}<span class="pastille"><span>{{.Name}}</span></span>{{end}}</td></tr>{{end}}
+      <tr><td class="cle">Dépend de</td><td>{{range .Depends}}<span class="pastille"><a href="#p/{{.}}">{{.}}</a></span>{{else}}rien{{end}}</td></tr>
+      {{if .UsedBy}}<tr><td class="cle">Utilisé par</td><td>{{range .UsedBy}}<span class="pastille"><a href="#p/{{.}}">{{.}}</a></span>{{end}}</td></tr>{{end}}
+    </table></div>
+    <h4>Fichiers installés dans A:\pkg\{{.Name}}\</h4>
+    <div class="tableau"><table>
+      <tr><th>Fichier</th><th>Taille</th><th>SHA-1</th></tr>
+      {{range .Files}}<tr><td><a href="{{.Source}}">{{.Path}}</a></td><td class="num">{{.SizeLabel}}</td><td class="sha"><code title="{{.SHA1}}">{{.Short}}</code></td></tr>{{end}}
+    </table></div>
+    <div class="liens">
+      <a class="bouton" href="{{.Source}}">Voir les sources</a>
+      <button type="button" class="bouton clair" data-essayer="{{.Name}}">Essayer dans le terminal</button>
+    </div>
+  </div>
+</dialog>
+{{end}}
+
+<script>
+(() => {
+  const PKGS = {{.JSON}};
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+  // ---------- catalogue : recherche et filtres
+  const cartes = $$(".carte");
+  const filtre = $("#filtre");
+  let type = "";
+  const plier = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  function appliquer() {
+    const mots = plier(filtre.value.trim()).split(/\s+/).filter(Boolean);
+    let n = 0;
+    for (const c of cartes) {
+      const texte = plier(c.dataset.texte);
+      const ok = (!type || c.dataset.types.split(" ").includes(type)) && mots.every(m => texte.includes(m));
+      c.hidden = !ok;
+      if (ok) n++;
+    }
+    $("#resultat").textContent = n + " logiciel" + (n > 1 ? "s" : "") + (mots.length || type ? " trouvé" + (n > 1 ? "s" : "") : "");
+    $("#vide").classList.toggle("visible", n === 0);
+  }
+  filtre.addEventListener("input", appliquer);
+  $$(".filtres button").forEach(b => b.addEventListener("click", () => {
+    type = b.dataset.type;
+    $$(".filtres button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    appliquer();
+  }));
+
+  // ---------- copier la commande
+  document.addEventListener("click", async e => {
+    const b = e.target.closest("[data-copier]");
+    if (!b) return;
+    try { await navigator.clipboard.writeText(b.dataset.copier); b.textContent = "copié !"; }
+    catch { b.textContent = "Ctrl+C"; }
+    setTimeout(() => (b.textContent = "copier"), 1500);
+  });
+
+  // ---------- fiches : #p/nom ouvre la fiche, partageable
+  function route() {
+    const m = location.hash.match(/^#p\/(.+)$/);
+    $$("dialog[open]").forEach(d => { if (!m || d.id !== "fiche-" + m[1]) d.close(); });
+    if (m) { const d = document.getElementById("fiche-" + decodeURIComponent(m[1])); if (d && !d.open) d.showModal(); }
+  }
+  $$("dialog").forEach(d => {
+    d.addEventListener("close", () => { if (location.hash === "#p/" + d.id.slice(6)) history.replaceState(null, "", location.pathname + "#catalogue"); });
+    d.addEventListener("click", e => { if (e.target === d) d.close(); });
+    $(".fermer", d).addEventListener("click", () => d.close());
+  });
+  window.addEventListener("hashchange", route);
+  route();
+
+  // ---------- le terminal : une imitation de pkg
+  const sortie = $("#sortie"), journal = $("#journal"), saisie = $("#saisie");
+  const ledDisk = $("#led-disk"), ledNet = $("#led-net");
+  const installes = {};
+  let aJour = false, occupe = false, interagi = false;
+  const pause = ms => new Promise(r => setTimeout(r, ms));
+  const ko = n => Math.ceil(n / 1024) + "K";
+  const sansAccents = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  function ecrire(texte, classe) {
+    const l = document.createElement("div");
+    if (classe) l.className = classe;
+    l.textContent = texte;
+    journal.appendChild(l);
+    sortie.scrollTop = sortie.scrollHeight;
+    return l;
+  }
+  const largeur = () => Math.max(30, Math.floor(sortie.clientWidth / 9.2));
+  function ligne(nom) {
+    const p = PKGS[nom], i = installes[nom];
+    const etat = i ? " [installe]" : "";
+    let desc = sansAccents(p.description);
+    const tete = nom.padEnd(16) + " " + p.version.padEnd(8);
+    const place = largeur() - tete.length - etat.length - 1;
+    if (desc.length > place) desc = desc.slice(0, Math.max(place - 1, 0)) + "~";
+    ecrire(tete + " " + desc + etat, i ? "ok" : "");
+  }
+  const noms = () => Object.keys(PKGS).sort();
+  function exiger() { if (!aJour) { ecrire("\nerreur : pas de liste de packages : tapez « pkg update »", "err"); return false; } return true; }
+  function resoudre(nom, ordre = [], vu = {}) {
+    if (vu[nom]) return ordre;
+    vu[nom] = true;
+    for (const d of PKGS[nom].depends) resoudre(d, ordre, vu);
+    ordre.push(nom);
+    return ordre;
+  }
+
+  const CMDS = {
+    async update() {
+      const l = ecrire("Liste des packages... ");
+      ledNet.classList.remove("on"); await pause(250); ledNet.classList.add("on"); await pause(250);
+      aJour = true;
+      l.textContent += noms().length + " package(s)";
+    },
+    list(args) {
+      const tous = noms().filter(n => args[0] !== "-i" || installes[n]);
+      if (args[0] === "-i" && !tous.length) return ecrire("aucun package installe");
+      if (args[0] !== "-i" && !exiger()) return;
+      tous.forEach(ligne);
+    },
+    search(args) {
+      if (!args[0]) return ecrire("\nerreur : usage : pkg search <mot>", "err");
+      if (!exiger()) return;
+      const mot = plier(args[0]);
+      const r = noms().filter(n => n.includes(mot) || plier(PKGS[n].description).includes(mot));
+      r.length ? r.forEach(ligne) : ecrire("aucun package ne correspond");
+    },
+    info(args) {
+      const nom = args[0];
+      if (!nom) return ecrire("\nerreur : usage : pkg info <nom>", "err");
+      if (!exiger()) return;
+      const p = PKGS[nom];
+      if (!p) return ecrire("\nerreur : package inconnu : " + nom, "err");
+      ecrire(nom, "titre");
+      ecrire("  version      " + p.version);
+      ecrire("  description  " + sansAccents(p.description));
+      if (p.author) ecrire("  auteur       " + p.author);
+      if (p.license) ecrire("  licence      " + p.license);
+      ecrire("  taille       " + ko(p.size) + " (" + p.files + " fichier(s))");
+      if (p.bin.length) ecrire("  commandes    " + p.bin.join(" "));
+      if (p.depends.length) ecrire("  depend de    " + p.depends.join(" "));
+      if (installes[nom]) ecrire("  installe     " + p.version, "ok");
+    },
+    async install(args) {
+      if (!args.length) return ecrire("\nerreur : usage : pkg install <nom>...", "err");
+      if (!exiger()) return;
+      for (const a of args) if (!PKGS[a]) return ecrire("\nerreur : package inconnu : " + a, "err");
+      const ordre = [];
+      args.forEach(a => resoudre(a, ordre, Object.fromEntries(ordre.map(n => [n, true]))));
+      for (const nom of ordre) {
+        const p = PKGS[nom];
+        if (installes[nom]) { if (args.includes(nom)) ecrire(nom + " " + p.version + " est deja installe"); continue; }
+        const l = ecrire("");
+        for (let i = 1; i <= p.files; i++) {
+          l.textContent = nom + " " + p.version + " : " + p.names[i - 1] + " (" + i + "/" + p.files + ")";
+          ledNet.classList.remove("on"); ledDisk.classList.add("on");
+          await pause(180);
+          ledNet.classList.add("on"); ledDisk.classList.remove("on");
+          await pause(70);
+        }
+        l.textContent = nom + " " + p.version + " : " + p.files + " fichier(s), " + ko(p.size);
+        installes[nom] = true;
+        ecrire(nom + " " + p.version + " installe", "ok");
+      }
+      const cmds = ordre.flatMap(n => PKGS[n].bin);
+      if (cmds.length) ecrire("Nouvelle(s) commande(s) : " + cmds.join(", "), "warn");
+    },
+    upgrade() { if (exiger()) ecrire("tout est a jour"); },
+    remove(args) {
+      const force = args[0] === "-f";
+      if (force) args = args.slice(1);
+      if (!args.length) return ecrire("\nerreur : usage : pkg remove [-f] <nom>...", "err");
+      for (const a of args) if (!installes[a]) return ecrire("\nerreur : " + a + " n'est pas installe", "err");
+      if (!force) for (const o of Object.keys(installes))
+        if (!args.includes(o)) for (const d of PKGS[o].depends)
+          if (args.includes(d)) return ecrire("\nerreur : " + o + " depend de " + d + " (pkg remove -f pour forcer)", "err");
+      for (const a of args) { delete installes[a]; ecrire(a + " desinstalle", "ok"); }
+    },
+    url() { ecrire(location.origin + location.pathname.replace(/[^/]*$/, "")); },
+  };
+  const USAGE = `pkg update                  recuperer la liste des packages
+pkg list [-i]               packages disponibles (-i : installes)
+pkg search <mot>            chercher
+pkg info <nom>              details d'un package
+pkg install <nom>...        installer (avec ses dependances)
+pkg upgrade [nom...]        mettre a jour
+pkg remove [-f] <nom>...    desinstaller`;
+
+  async function executer(texte) {
+    ecrire("A>" + texte);
+    const [cmd, ...args] = texte.trim().split(/\s+/);
+    const nom = (cmd || "").toLowerCase();
+    if (!nom) return;
+    if (nom === "cls") { journal.textContent = ""; return; }
+    if (nom === "help") return ecrire("Ici, seule la commande pkg est branchee. Tapez « pkg ».");
+    if (nom === "pkg") {
+      const f = CMDS[args[0]];
+      if (!args[0]) return ecrire(USAGE);
+      if (!f) return ecrire("pkg : commande inconnue « " + args[0] + " »\n\n" + USAGE);
+      return f(args.slice(1));
+    }
+    const proprio = Object.keys(installes).find(n => PKGS[n].bin.includes(nom));
+    if (proprio) return ecrire("(" + nom + " se lance sur la vraie machine : sources dans A:\\pkg\\" + proprio + "\\)", "warn");
+    ecrire("Commande inconnue : " + cmd + " (tapez HELP)");
+  }
+  async function taper(texte) {
+    if (occupe) return;
+    occupe = true;
+    try { await executer(texte); } finally { occupe = false; if (interagi) saisie.focus({ preventScroll: true }); }
+  }
+  async function taperLentement(texte) {
+    if (occupe) return;
+    saisie.value = "";
+    for (const c of texte) { saisie.value += c; ajuster(); await pause(35); }
+    saisie.value = ""; ajuster();
+    await taper(texte);
+  }
+  const historique = []; let pos = 0;
+  const ajuster = () => (saisie.style.width = saisie.value.length + .5 + "ch");
+  saisie.addEventListener("input", ajuster);
+  saisie.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !occupe) {
+      const t = saisie.value; saisie.value = "";
+      if (t.trim()) { historique.push(t); pos = historique.length; }
+      taper(t);
+    } else if (e.key === "ArrowUp" && pos > 0) { saisie.value = historique[--pos]; e.preventDefault(); }
+    else if (e.key === "ArrowDown" && pos < historique.length) { saisie.value = historique[++pos] || ""; e.preventDefault(); }
+    requestAnimationFrame(ajuster);
+  });
+  $("#ecran").addEventListener("click", () => { interagi = true; saisie.focus({ preventScroll: true }); });
+  $$("[data-taper]").forEach(b => b.addEventListener("click", () => { interagi = true; taperLentement(b.dataset.taper); }));
+  $$("[data-essayer]").forEach(b => b.addEventListener("click", async () => {
+    interagi = true;
+    b.closest("dialog").close();
+    $("#ecran").scrollIntoView({ behavior: "smooth", block: "center" });
+    if (!aJour) await taperLentement("pkg update");
+    await taperLentement("pkg info " + b.dataset.essayer);
+  }));
+
+  ecrire("TERMINA DOS 1.0 - Logitheque");
+  ecrire("Tapez « pkg » pour l'aide.\n");
+  taperLentement("pkg update");
+})();
+</script>
+</body>
+</html>

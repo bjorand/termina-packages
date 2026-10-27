@@ -32,7 +32,7 @@ jobs:
         run: |
           PREV=""
           if [ -f prev.lua ]; then PREV="-prev prev.lua"; fi
-          go run ./tools/mkindex -luac luac5.4 -out site $PREV
+          go run ./tools/mkindex -luac luac5.4 -repo "${{ github.server_url }}/${{ github.repository }}" -out site $PREV
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'push'
         with:

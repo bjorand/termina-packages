@@ -19,10 +19,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false  # aucune dépendance, donc pas de go.sum à mettre en cache
       - name: Lua 5.4 (vérification de la syntaxe)
         run: sudo apt-get update && sudo apt-get install -y lua5.4
       - run: go test ./...
@@ -33,7 +34,7 @@ jobs:
           PREV=""
           if [ -f prev.lua ]; then PREV="-prev prev.lua"; fi
           go run ./tools/mkindex -luac luac5.4 -repo "${{ github.server_url }}/${{ github.repository }}" -out site $PREV
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: github.event_name == 'push'
         with:
           path: site
@@ -47,4 +48,4 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

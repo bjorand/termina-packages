@@ -1,0 +1,2 @@
+# LF partout : les SHA-1 de mkindex doivent être les mêmes sous Windows et en CI.
+* text=auto eol=lf

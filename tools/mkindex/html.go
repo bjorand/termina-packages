@@ -8,16 +8,14 @@ import (
 	"strings"
 )
 
-// La Logithèque : index.html du site, dans le style du site de TERMINA.
+// Le catalogue : index.html du site, dans le style du site de TERMINA.
 // Rendue côté serveur (lisible sans JavaScript) ; le script ajoute la
-// recherche, les fiches (#p/nom) et un terminal qui imite pkg.
+// recherche, les filtres et les fiches (#p/nom).
 
 //go:embed catalogue.html
 var catalogueSrc string
 
-var catalogue = template.Must(template.New("catalogue").Funcs(template.FuncMap{
-	"mod": func(a, b int) int { return a % b },
-}).Parse(catalogueSrc))
+var catalogue = template.Must(template.New("catalogue").Parse(catalogueSrc))
 
 type pageFile struct {
 	Path, SizeLabel, SHA1, Short, Source string
@@ -27,7 +25,6 @@ type pagePkg struct {
 	*Package
 	Kinds      []string
 	KindAttr   string
-	Initials   string
 	SizeLabel  string
 	SearchText string
 	Source     string
@@ -35,47 +32,22 @@ type pagePkg struct {
 	Files      []pageFile
 }
 
-// jsPkg : ce que le terminal de la page sait d'un package.
-type jsPkg struct {
-	Version     string   `json:"version"`
-	Description string   `json:"description"`
-	Author      string   `json:"author,omitempty"`
-	License     string   `json:"license,omitempty"`
-	Bin         []string `json:"bin"`
-	Depends     []string `json:"depends"`
-	Size        int64    `json:"size"`
-	Files       int      `json:"files"`
-	Names       []string `json:"names"`
-}
-
 type pageData struct {
 	Date, Repo, Example   string
 	Count, Commands, Apps int
 	Packages              []pagePkg
-	JSON                  map[string]jsPkg
 }
 
-// sizeLabel : « 309 o », « 12,4 Ko ».
+// sizeLabel : « 309 B », « 12.4 KB ».
 func sizeLabel(n int64) string {
 	if n < 1024 {
-		return fmt.Sprintf("%d o", n)
+		return fmt.Sprintf("%d B", n)
 	}
-	return strings.Replace(fmt.Sprintf("%.1f Ko", float64(n)/1024), ".", ",", 1)
-}
-
-func initials(name string) string {
-	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' })
-	if len(parts) >= 2 {
-		return parts[0][:1] + parts[1][:1]
-	}
-	if len(name) >= 2 {
-		return name[:2]
-	}
-	return name
+	return fmt.Sprintf("%.1f KB", float64(n)/1024)
 }
 
 func indexHTML(pkgs []*Package, repo, date string) (string, error) {
-	data := pageData{Date: date, Repo: repo, Count: len(pkgs), JSON: map[string]jsPkg{}}
+	data := pageData{Date: date, Repo: repo, Count: len(pkgs)}
 	usedBy := map[string][]string{}
 	for _, p := range pkgs {
 		for _, d := range p.Depends {
@@ -84,14 +56,13 @@ func indexHTML(pkgs []*Package, repo, date string) (string, error) {
 	}
 	for _, p := range pkgs {
 		pp := pagePkg{
-			Package:  p,
-			Initials: initials(p.Name),
-			Source:   fmt.Sprintf("%s/tree/main/packages/%s", repo, p.Name),
-			UsedBy:   usedBy[p.Name],
+			Package: p,
+			Source:  fmt.Sprintf("%s/tree/main/packages/%s", repo, p.Name),
+			UsedBy:  usedBy[p.Name],
 		}
 		sort.Strings(pp.UsedBy)
 		if len(p.Bin) > 0 {
-			pp.Kinds = append(pp.Kinds, "commande")
+			pp.Kinds = append(pp.Kinds, "command")
 			data.Commands += len(p.Bin)
 		}
 		if len(p.Apps) > 0 {
@@ -99,14 +70,19 @@ func indexHTML(pkgs []*Package, repo, date string) (string, error) {
 			data.Apps += len(p.Apps)
 		}
 		if len(pp.Kinds) == 0 {
-			pp.Kinds = append(pp.Kinds, "module")
+			// Sans commande ni app : une bibliothèque Lua, ou de simples fichiers.
+			kind := "files"
+			for _, f := range p.Files {
+				if strings.HasSuffix(f.Path, ".lua") {
+					kind = "module"
+				}
+			}
+			pp.Kinds = append(pp.Kinds, kind)
 		}
 		pp.KindAttr = strings.Join(pp.Kinds, " ")
 		var total int64
-		var names []string
 		for _, f := range p.Files {
 			total += f.Size
-			names = append(names, f.Path)
 			pp.Files = append(pp.Files, pageFile{
 				Path: f.Path, SizeLabel: sizeLabel(f.Size), SHA1: f.SHA1, Short: f.SHA1[:10],
 				Source: fmt.Sprintf("%s/blob/main/packages/%s/%s", repo, p.Name, f.Path),
@@ -119,25 +95,13 @@ func indexHTML(pkgs []*Package, repo, date string) (string, error) {
 		}
 		pp.SearchText = strings.Join(append([]string{p.Name, p.Description, p.Author, strings.Join(p.Bin, " "), strings.Join(apps, " ")}, pp.Kinds...), " ")
 		data.Packages = append(data.Packages, pp)
-		data.JSON[p.Name] = jsPkg{
-			Version: p.Version, Description: p.Description, Author: p.Author, License: p.License,
-			Bin: nonNil(p.Bin), Depends: nonNil(p.Depends), Size: total, Files: len(p.Files), Names: names,
+		if p.Name == "salut" || data.Example == "" {
+			data.Example = p.Name
 		}
-	}
-	data.Example = "salut"
-	if _, ok := data.JSON["salut"]; !ok && len(pkgs) > 0 {
-		data.Example = pkgs[0].Name
 	}
 	var b strings.Builder
 	if err := catalogue.Execute(&b, data); err != nil {
 		return "", err
 	}
 	return b.String(), nil
-}
-
-func nonNil(xs []string) []string {
-	if xs == nil {
-		return []string{}
-	}
-	return xs
 }

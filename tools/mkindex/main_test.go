@@ -79,7 +79,7 @@ func TestValidPackageAndIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`id="fiche-hello"`, `Une &#34;app&#34;`, "https://github.com/x/y/blob/main/packages/hello/hello.lua", `data-types="app"`, `data-types="commande"`} {
+	for _, want := range []string{`id="sheet-hello"`, `Une &#34;app&#34;`, "https://github.com/x/y/blob/main/packages/hello/hello.lua", `data-kinds="app"`, `data-kinds="command"`} {
 		if !strings.Contains(string(page), want) {
 			t.Errorf("index.html sans %q", want)
 		}

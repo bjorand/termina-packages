@@ -1,4 +1,4 @@
-# Valide les packages à chaque PR ; sur main, publie le registre sur GitHub Pages.
+# Validates the packages on every PR; on main, publishes the registry to GitHub Pages.
 name: packages
 
 on:
@@ -23,13 +23,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache: false  # aucune dépendance, donc pas de go.sum à mettre en cache
-      - name: Lua 5.4 (vérification de la syntaxe)
+          cache: false  # no dependencies, so no go.sum to cache
+      - name: Lua 5.4 (syntax check)
         run: sudo apt-get update && sudo apt-get install -y lua5.4
       - run: go test ./...
-      - name: Index publié (pour exiger une nouvelle version quand un package change)
+      - name: Published index (to require a new version when a package changes)
         run: curl -fsSL https://bjorand.github.io/termina-packages/index.lua -o prev.lua || rm -f prev.lua
-      - name: Validation et génération du site
+      - name: Validate and generate the site
         run: |
           PREV=""
           if [ -f prev.lua ]; then PREV="-prev prev.lua"; fi

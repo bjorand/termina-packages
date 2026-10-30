@@ -1,41 +1,44 @@
 # termina-packages
 
-Registre de packages Lua pour [TERMINA](https://github.com/bjorand/termina). Sur la machine, la commande `pkg` les installe :
+Package registry for [TERMINA](https://github.com/bjorand/termina). On the machine, the `pkg` command installs them:
 
 ```
-pkg update            récupérer la liste des packages
-pkg list              packages disponibles (-i : installés)
-pkg search <mot>      chercher
-pkg info <nom>        détails
-pkg install <nom>     installer, avec ses dépendances
-pkg upgrade [nom]     mettre à jour (tout par défaut)
-pkg remove <nom>      désinstaller
+pkg update            fetch the package list
+pkg list              available packages (-i: installed)
+pkg search <word>     search
+pkg info <name>       details
+pkg install <name>    install, with its dependencies
+pkg upgrade [name]    upgrade (everything by default)
+pkg remove <name>     uninstall
 ```
 
-## Fonctionnement
+A package can hold any kind of file: Lua programs and modules, shell scripts, PICO-8 carts, data.
 
-1. Chaque package est un dossier `packages/<nom>/` avec un manifeste `package.lua` et ses fichiers.
-2. À chaque pull request, la CI (`.github/workflows/publish.yml`) lance `tools/mkindex`, qui valide tous les packages. Elle vérifie :
-   - le manifeste ;
-   - la taille des fichiers ;
-   - la syntaxe Lua 5.4 ;
-   - les dépendances ;
-   - qu'une nouvelle version accompagne chaque modification.
-3. Sur `main`, la CI publie le registre sur GitHub Pages (`https://bjorand.github.io/termina-packages/`) :
-   - `index.lua` : la liste, avec la taille et la somme SHA-1 de chaque fichier ;
-   - `p/<nom>/<version>/<fichier>` : les fichiers eux-mêmes.
-4. Sur la machine, `pkg update` télécharge `index.lua`. `pkg install` télécharge ensuite les fichiers un par un et vérifie leur SHA-1, puis installe le package dans `A:\pkg\<nom>\`. En cas d'échec, la version déjà installée reste en place.
+## How it works
 
-Pour utiliser un autre registre (un fork, ou un serveur local de test) : `pkg url http://192.168.1.10:8000/`.
+1. Each package is a folder `packages/<name>/` with a `package.lua` manifest and its files.
+2. On every pull request, CI (`.github/workflows/publish.yml`) runs `tools/mkindex`, which validates all the packages. It checks:
+   - the manifest;
+   - file sizes;
+   - Lua 5.4 syntax of the `.lua` files;
+   - dependencies;
+   - that every change comes with a new version.
+3. On `main`, CI publishes the registry to GitHub Pages (`https://bjorand.github.io/termina-packages/`):
+   - `index.lua`: the list, with the size and SHA-1 sum of every file;
+   - `p/<name>/<version>/<file>`: the files themselves;
+   - `index.html`: the catalog page.
+4. On the machine, `pkg update` downloads `index.lua`. `pkg install` then downloads the files one by one, checks their SHA-1 and installs the package into `A:\pkg\<name>\`. If anything fails, the version already installed stays in place.
 
-## Développer
+To use another registry (a fork, or a local test server): `pkg url http://192.168.1.10:8000/`.
+
+## Development
 
 ```
 go test ./...
-go run ./tools/mkindex                          # valider seulement
-go run ./tools/mkindex -luac luac5.4 -out site  # générer le site dans site/
+go run ./tools/mkindex                          # validate only
+go run ./tools/mkindex -luac luac5.4 -out site  # generate the site into site/
 ```
 
-Pour tester sur la machine ou dans l'émulateur, servez `site/` (par exemple `python -m http.server 8000 -d site`), puis faites `pkg url http://<ip>:8000/` et `pkg update`.
+To test on the machine or in the emulator, serve `site/` (for example `python -m http.server 8000 -d site`), then run `pkg url http://<ip>:8000/` and `pkg update`.
 
-Pour contribuer un package, voir [CONTRIBUTING.md](CONTRIBUTING.md).
+To contribute a package, see [CONTRIBUTING.md](CONTRIBUTING.md).

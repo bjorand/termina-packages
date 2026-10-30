@@ -1,36 +1,36 @@
-# Contribuer un package
+# Contributing a package
 
-1. Forkez le dépôt et copiez `packages/salut/` vers `packages/<votre-nom>/`.
-2. Écrivez le manifeste `package.lua` et vos fichiers.
-3. Lancez `go run ./tools/mkindex` pour vérifier, puis ouvrez une pull request. La CI refait les vérifications. Une fois la PR fusionnée, le package est disponible pour tous après un `pkg update`.
+1. Fork the repository and copy `packages/salut/` to `packages/<your-name>/`.
+2. Write the `package.lua` manifest, then add your files.
+3. Run `go run ./tools/mkindex` to check, then open a pull request. CI runs the same checks. Once the PR is merged, the package is available to everyone after a `pkg update`.
 
-## Le manifeste
+## The manifest
 
 ```lua
 return {
-  name = "snake2",                 -- = nom du dossier ; minuscules, chiffres, - et _ (24 max)
+  name = "snake2",                 -- = folder name; lowercase letters, digits, - and _ (24 max)
   version = "1.0.0",               -- X.Y.Z
-  description = "Snake en couleurs", -- une ligne, 120 caractères max
-  author = "Ada Lovelace",         -- facultatif
-  license = "MIT",                 -- facultatif
-  bin = { "snake2" },              -- facultatif : commandes du prompt A>
-  depends = { "tui" },             -- facultatif : autres packages du registre
+  description = "Snake in color",  -- one line, 120 characters max
+  author = "Ada Lovelace",         -- optional
+  license = "MIT",                 -- optional
+  bin = { "snake2" },              -- optional: commands for the A> prompt
+  depends = { "tui" },             -- optional: other packages from the registry
 }
 ```
 
-Le manifeste ne contient que des données : chaînes, nombres et listes. Les fonctions, les appels et les variables y sont refusés.
+The manifest holds data only: strings, numbers and lists. Functions, calls and variables are rejected.
 
-## Règles
+## Rules
 
-- **Fichiers :** ils sont à plat dans le dossier, sans sous-dossiers. Chaque fichier fait **64 Ko au plus**, ce qui est la limite d'un script sur la machine. Un package fait 256 Ko au plus en tout, parce que le disque `A:` fait environ 1,9 Mo.
-- **Lua :** c'est du Lua 5.4 avec des nombres sur 32 bits. Il n'y a ni `io` ni `os`, et la mémoire est limitée à 96 Ko par script. L'API (`term`, `key`, `fs`, `net`, `win`...) est décrite dans le README de TERMINA.
-- **Commandes :** chaque nom de `bin` doit avoir son fichier `<nom>.lua`. Après installation, taper `<nom>` au prompt le lance. Un fichier `<nom>.lua` à la racine de `A:` reste prioritaire, alors choisissez des noms qui ne risquent pas de collisionner (évitez par exemple `hello` ou `snake`).
-- **Modules :** un fichier `util.lua` de votre package se charge avec `require "<package>.util"`, qui le cherche dans `A:\pkg\<package>\util.lua`. Un autre package qui vous a dans ses `depends` peut faire de même.
-- **Applications du bureau :** un fichier dont l'en-tête contient `-- @app Nom` (et facultativement `-- @icon nom`) apparaît sur le bureau `win`, comme les applications à la racine de `A:`.
-- **Versions :** toute modification d'un package publié doit monter sa version, sinon la CI refuse la PR. Les machines ne mettent à jour un package que si sa version augmente.
+- **Files:** any kind of file (Lua, shell scripts, PICO-8 carts, data...), flat in the folder, without subfolders. They are installed as-is in `A:\pkg\<name>\`. Each file is **64 KB at most**, the limit for a script on the machine. A package is 256 KB at most in total, because the `A:` drive holds about 1.9 MB.
+- **Lua:** `.lua` files are Lua 5.4 with 32-bit numbers, and CI checks their syntax. There is no `io` or `os`, and memory is limited to 96 KB per script. The API (`term`, `key`, `fs`, `net`, `win`...) is described in the TERMINA README.
+- **Commands:** each name in `bin` needs its own `<name>.lua` file. Once installed, typing `<name>` at the prompt runs it. A `<name>.lua` file at the root of `A:` takes precedence, so pick names that are unlikely to collide (avoid `hello` or `snake`, for example).
+- **Modules:** a `util.lua` file in your package loads with `require "<package>.util"`, which looks for it in `A:\pkg\<package>\util.lua`. Another package that lists yours in its `depends` can do the same.
+- **Desktop apps:** a file whose header contains `-- @app Name` (and optionally `-- @icon name`) shows up on the `win` desktop, like the apps at the root of `A:`.
+- **Versions:** any change to a published package must bump its version, or CI rejects the PR. Machines only update a package when its version goes up.
 
-## Sécurité
+## Security
 
-Un package s'exécute avec les mêmes droits que n'importe quel programme Lua de la machine. Il peut notamment lire et écrire tout `A:` et utiliser le réseau. Les PR sont relues avant d'être fusionnées : gardez le code lisible (pas de code minifié ni obscurci) et n'envoyez pas de données vers un serveur sans le dire dans la description.
+A package runs with the same rights as any Lua program on the machine. In particular, it can read and write all of `A:` and use the network. PRs are reviewed before they are merged: keep the code readable (no minified or obfuscated code), and don't send data to a server without saying so in the description.
 
-Sur la machine, chaque fichier téléchargé est vérifié par sa somme SHA-1 inscrite dans l'index. L'index lui-même passe par HTTPS, mais la machine ne vérifie pas les certificats TLS.
+On the machine, every downloaded file is checked against its SHA-1 sum from the index. The index itself goes over HTTPS, but the machine does not verify TLS certificates.

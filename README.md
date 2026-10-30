@@ -12,7 +12,7 @@ pkg upgrade [name]    upgrade (everything by default)
 pkg remove <name>     uninstall
 ```
 
-A package can hold any kind of file: Lua programs and modules, shell scripts, PICO-8 carts, data.
+A package can hold any kind of file: Lua programs and modules, shell scripts, data.
 
 ## How it works
 

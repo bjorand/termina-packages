@@ -22,7 +22,7 @@ The manifest holds data only: strings, numbers and lists. Functions, calls and v
 
 ## Rules
 
-- **Files:** any kind of file (Lua, shell scripts, PICO-8 carts, data...), flat in the folder, without subfolders. They are installed as-is in `A:\pkg\<name>\`. Each file is **64 KB at most**, the limit for a script on the machine. A package is 256 KB at most in total, because the `A:` drive holds about 1.9 MB.
+- **Files:** any kind of file (Lua, shell scripts, data...), flat in the folder, without subfolders. They are installed as-is in `A:\pkg\<name>\`. Each file is **64 KB at most**, the limit for a script on the machine. A package is 256 KB at most in total, because the `A:` drive holds about 1.9 MB.
 - **Lua:** `.lua` files are Lua 5.4 with 32-bit numbers, and CI checks their syntax. There is no `io` or `os`, and memory is limited to 96 KB per script. The API (`term`, `key`, `fs`, `net`, `win`...) is described in the TERMINA README.
 - **Commands:** each name in `bin` needs its own `<name>.lua` file. Once installed, typing `<name>` at the prompt runs it. A `<name>.lua` file at the root of `A:` takes precedence, so pick names that are unlikely to collide (avoid `hello` or `snake`, for example).
 - **Modules:** a `util.lua` file in your package loads with `require "<package>.util"`, which looks for it in `A:\pkg\<package>\util.lua`. Another package that lists yours in its `depends` can do the same.

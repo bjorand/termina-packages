@@ -1,9 +1,9 @@
--- Package d'exemple : copiez ce dossier pour en créer un.
+-- Example package: copy this folder to create your own.
 return {
   name = "salut",
-  version = "1.0.0",
-  description = "Exemple : une commande et un module partagé",
+  version = "1.0.1",
+  description = "Example: a command and a shared module",
   author = "bjorand",
   license = "MIT",
-  bin = { "salut" },   -- tapez « salut » au prompt A>
+  bin = { "salut" },   -- type "salut" at the A> prompt
 }

@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// Le catalogue : index.html du site, dans le style du site de TERMINA.
-// Rendue côté serveur (lisible sans JavaScript) ; le script ajoute la
-// recherche, les filtres et les fiches (#p/nom).
+// The catalog: the site's index.html, in the style of the TERMINA site.
+// Rendered server-side (readable without JavaScript); the script adds the
+// search, the filters and the package sheets (#p/name).
 
 //go:embed catalogue.html
 var catalogueSrc string
@@ -38,7 +38,7 @@ type pageData struct {
 	Packages              []pagePkg
 }
 
-// sizeLabel : « 309 B », « 12.4 KB ».
+// sizeLabel: "309 B", "12.4 KB".
 func sizeLabel(n int64) string {
 	if n < 1024 {
 		return fmt.Sprintf("%d B", n)
@@ -70,7 +70,7 @@ func indexHTML(pkgs []*Package, repo, date string) (string, error) {
 			data.Apps += len(p.Apps)
 		}
 		if len(pp.Kinds) == 0 {
-			// Sans commande ni app : une bibliothèque Lua, ou de simples fichiers.
+			// No command and no app: a Lua library, or plain files.
 			kind := "files"
 			for _, f := range p.Files {
 				if strings.HasSuffix(f.Path, ".lua") {

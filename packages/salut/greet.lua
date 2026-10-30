@@ -1,8 +1,8 @@
--- Module du package salut : require "salut.greet" le charge depuis /pkg/salut/.
+-- Module of the salut package: require "salut.greet" loads it from /pkg/salut/.
 local M = {}
 
 function M.message(name)
-  return "Bonjour, " .. name .. " !"
+  return "Hello, " .. name .. "!"
 end
 
 return M

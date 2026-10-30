@@ -1,13 +1,13 @@
-// mkindex valide les packages de packages/ et génère le site publié sur
-// GitHub Pages, que lit la commande pkg de TERMINA :
+// mkindex validates the packages in packages/ and generates the site published
+// on GitHub Pages, which TERMINA's pkg command reads:
 //
-//	site/index.lua                    liste des packages (données Lua)
-//	site/p/<nom>/<version>/<fichier>  fichiers de chaque package
-//	site/index.html                   la même liste, pour les humains
+//	site/index.lua                  package list (Lua data)
+//	site/p/<name>/<version>/<file>  the files of each package
+//	site/index.html                 the same list, for humans
 //
-//	go run ./tools/mkindex [-packages packages] [-out site] [-prev ancien/index.lua] [-luac luac5.4]
+//	go run ./tools/mkindex [-packages packages] [-out site] [-prev old/index.lua] [-luac luac5.4]
 //
-// Sans -out, il ne fait que valider.
+// Without -out, it only validates.
 package main
 
 import (
@@ -25,8 +25,8 @@ import (
 	"time"
 )
 
-// Limites de la machine : un script de plus de 64 Ko ne se charge pas, et
-// le disque A: fait environ 1,9 Mo.
+// Machine limits: a script over 64 KB does not load, and the A: drive holds
+// about 1.9 MB.
 const (
 	maxFile    = 64 * 1024
 	maxPackage = 256 * 1024
@@ -49,20 +49,20 @@ type Package struct {
 	Name, Version, Description, Author, License string
 	Bin, Depends                                []string
 	Files                                       []File
-	Apps                                        []App // pour la page seulement : la machine les détecte elle-même
+	Apps                                        []App // for the page only: the machine detects them itself
 }
 
-// App : fichier dont l'en-tête porte « -- @app Nom » (bureau TERMINA WIN).
+// App: a file whose header has "-- @app Name" (TERMINA WIN desktop).
 type App struct {
 	File, Name, Icon string
 }
 
 func main() {
-	pkgDir := flag.String("packages", "packages", "dossier des packages")
-	out := flag.String("out", "", "dossier du site à générer (vide : valider seulement)")
-	prev := flag.String("prev", "", "index.lua publié précédemment (contrôle des numéros de version)")
-	luac := flag.String("luac", "", "compilateur pour vérifier la syntaxe, ex. « luac5.4 » (vide : pas de vérification)")
-	repo := flag.String("repo", "https://github.com/bjorand/termina-packages", "dépôt GitHub (liens vers les sources)")
+	pkgDir := flag.String("packages", "packages", "packages directory")
+	out := flag.String("out", "", "site directory to generate (empty: validate only)")
+	prev := flag.String("prev", "", "previously published index.lua (version number checks)")
+	luac := flag.String("luac", "", "compiler used to check syntax, e.g. \"luac5.4\" (empty: no check)")
+	repo := flag.String("repo", "https://github.com/bjorand/termina-packages", "GitHub repository (links to the source)")
 	flag.Parse()
 
 	pkgs, err := loadAll(*pkgDir, *luac)
@@ -74,16 +74,16 @@ func main() {
 		os.Exit(1)
 	}
 	if *out != "" {
-		if err := writeSite(*out, pkgs, *repo, time.Now().UTC().Format("02/01/2006")); err != nil {
+		if err := writeSite(*out, pkgs, *repo, time.Now().UTC().Format("2006-01-02")); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	}
-	fmt.Printf("%d package(s) valide(s)\n", len(pkgs))
+	fmt.Printf("%d valid package(s)\n", len(pkgs))
 }
 
-// loadAll lit et valide tous les packages ; toutes les erreurs sont renvoyées
-// d'un coup pour qu'un contributeur les voie en une seule exécution de la CI.
+// loadAll reads and validates every package; all errors are returned at once
+// so that a contributor sees them in a single CI run.
 func loadAll(dir, luac string) ([]*Package, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -109,7 +109,7 @@ func loadAll(dir, luac string) ([]*Package, error) {
 	for _, p := range pkgs {
 		for _, d := range p.Depends {
 			if byName[d] == nil {
-				errs = append(errs, fmt.Errorf("%s : dépend de « %s », qui n'existe pas", p.Name, d))
+				errs = append(errs, fmt.Errorf("%s: depends on \"%s\", which does not exist", p.Name, d))
 			}
 		}
 	}
@@ -123,11 +123,11 @@ func loadAll(dir, luac string) ([]*Package, error) {
 func loadPackage(dir, luac string) (*Package, error) {
 	base := filepath.Base(dir)
 	fail := func(format string, args ...any) error {
-		return fmt.Errorf("%s : %s", base, fmt.Sprintf(format, args...))
+		return fmt.Errorf("%s: %s", base, fmt.Sprintf(format, args...))
 	}
 	src, err := os.ReadFile(filepath.Join(dir, "package.lua"))
 	if err != nil {
-		return nil, fail("package.lua manquant")
+		return nil, fail("package.lua missing")
 	}
 	t, err := parseLuaData(base+"/package.lua", string(src))
 	if err != nil {
@@ -140,40 +140,40 @@ func loadPackage(dir, luac string) (*Package, error) {
 	}
 	lists := map[string]*[]string{"bin": &p.Bin, "depends": &p.Depends}
 	if len(t.Array) > 0 {
-		return nil, fail("package.lua : uniquement des champs « clé = valeur »")
+		return nil, fail("package.lua: only \"key = value\" fields")
 	}
 	for k, v := range t.Hash {
 		if s, ok := strs[k]; ok {
 			if *s, ok = v.(string); !ok {
-				return nil, fail("« %s » doit être une chaîne", k)
+				return nil, fail("\"%s\" must be a string", k)
 			}
 		} else if l, ok := lists[k]; ok {
 			lt, ok := v.(*luaTable)
 			if !ok || len(lt.Hash) > 0 {
-				return nil, fail("« %s » doit être une liste de chaînes", k)
+				return nil, fail("\"%s\" must be a list of strings", k)
 			}
 			for _, x := range lt.Array {
 				s, ok := x.(string)
 				if !ok {
-					return nil, fail("« %s » doit être une liste de chaînes", k)
+					return nil, fail("\"%s\" must be a list of strings", k)
 				}
 				*l = append(*l, s)
 			}
 		} else {
-			return nil, fail("champ inconnu « %s » (name, version, description, author, license, bin, depends)", k)
+			return nil, fail("unknown field \"%s\" (name, version, description, author, license, bin, depends)", k)
 		}
 	}
 	switch {
 	case p.Name != base:
-		return nil, fail("name = %q, mais le dossier s'appelle %q", p.Name, base)
+		return nil, fail("name = %q, but the folder is named %q", p.Name, base)
 	case !reName.MatchString(p.Name):
-		return nil, fail("nom invalide (minuscules, chiffres, - et _, 24 caractères au plus)")
+		return nil, fail("invalid name (lowercase letters, digits, - and _, 24 characters at most)")
 	case !reVersion.MatchString(p.Version):
-		return nil, fail("version %q : X.Y.Z attendu", p.Version)
+		return nil, fail("version %q: X.Y.Z expected", p.Version)
 	case strings.TrimSpace(p.Description) == "":
-		return nil, fail("description manquante")
+		return nil, fail("description missing")
 	case len(p.Description) > 120:
-		return nil, fail("description trop longue (120 caractères au plus)")
+		return nil, fail("description too long (120 characters at most)")
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -188,11 +188,11 @@ func loadPackage(dir, luac string) (*Package, error) {
 			continue
 		}
 		if e.IsDir() {
-			errs = append(errs, fail("%s : les sous-dossiers ne sont pas gérés", name))
+			errs = append(errs, fail("%s: subfolders are not supported", name))
 			continue
 		}
 		if !reFile.MatchString(name) {
-			errs = append(errs, fail("%s : nom de fichier invalide", name))
+			errs = append(errs, fail("%s: invalid file name", name))
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, name))
@@ -200,11 +200,11 @@ func loadPackage(dir, luac string) (*Package, error) {
 			return nil, err
 		}
 		if len(data) > maxFile {
-			errs = append(errs, fail("%s : %d octets, 64 Ko au plus", name, len(data)))
+			errs = append(errs, fail("%s: %d bytes, 64 KB at most", name, len(data)))
 		}
 		if strings.HasSuffix(name, ".lua") && luac != "" {
 			if err := syntax(luac, filepath.Join(dir, name)); err != nil {
-				errs = append(errs, fail("%s : %v", name, err))
+				errs = append(errs, fail("%s: %v", name, err))
 			}
 		}
 		if app, ok := appHeader(name, data); ok {
@@ -215,21 +215,21 @@ func loadPackage(dir, luac string) (*Package, error) {
 		total += int64(len(data))
 	}
 	if len(p.Files) == 0 {
-		errs = append(errs, fail("aucun fichier"))
+		errs = append(errs, fail("no files"))
 	}
 	if total > maxPackage {
-		errs = append(errs, fail("%d octets au total, 256 Ko au plus", total))
+		errs = append(errs, fail("%d bytes in total, 256 KB at most", total))
 	}
 	for _, b := range p.Bin {
 		if !reName.MatchString(b) {
-			errs = append(errs, fail("commande %q invalide", b))
+			errs = append(errs, fail("invalid command %q", b))
 		} else if !p.hasFile(b + ".lua") {
-			errs = append(errs, fail("commande %q : %s.lua manquant", b, b))
+			errs = append(errs, fail("command %q: %s.lua missing", b, b))
 		}
 	}
 	for _, d := range p.Depends {
 		if d == p.Name {
-			errs = append(errs, fail("dépend de lui-même"))
+			errs = append(errs, fail("depends on itself"))
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
@@ -238,7 +238,7 @@ func loadPackage(dir, luac string) (*Package, error) {
 	return p, nil
 }
 
-// appHeader lit l'en-tête comme wm::scanApps : « -- @app » dans les 255 premiers octets.
+// appHeader reads the header like wm::scanApps does: "-- @app" in the first 255 bytes.
 func appHeader(file string, data []byte) (App, bool) {
 	if !strings.HasSuffix(file, ".lua") {
 		return App{}, false
@@ -280,18 +280,18 @@ func syntax(luac, file string) error {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("erreur de syntaxe : %s", msg)
+		return fmt.Errorf("syntax error: %s", msg)
 	}
 	return nil
 }
 
 func checkCycles(pkgs []*Package, byName map[string]*Package) error {
-	state := map[string]int{} // 1 : en cours, 2 : fini
+	state := map[string]int{} // 1: visiting, 2: done
 	var visit func(p *Package, path []string) error
 	visit = func(p *Package, path []string) error {
 		switch state[p.Name] {
 		case 1:
-			return fmt.Errorf("dépendances circulaires : %s", strings.Join(append(path, p.Name), " -> "))
+			return fmt.Errorf("circular dependencies: %s", strings.Join(append(path, p.Name), " -> "))
 		case 2:
 			return nil
 		}
@@ -314,9 +314,9 @@ func checkCycles(pkgs []*Package, byName map[string]*Package) error {
 	return nil
 }
 
-// checkVersions refuse un package dont le contenu a changé depuis l'index
-// publié sans que sa version ait été montée (les machines ne le
-// mettraient pas à jour), ou dont la version a reculé.
+// checkVersions rejects a package whose content changed since the published
+// index without a version bump (machines would not update it), or whose
+// version went backwards.
 func checkVersions(pkgs []*Package, prevFile string) error {
 	src, err := os.ReadFile(prevFile)
 	if err != nil {
@@ -328,7 +328,7 @@ func checkVersions(pkgs []*Package, prevFile string) error {
 	}
 	prev, _ := idx.Hash["packages"].(*luaTable)
 	if prev == nil {
-		return fmt.Errorf("%s : pas de table packages", prevFile)
+		return fmt.Errorf("%s: no packages table", prevFile)
 	}
 	var errs []error
 	for _, p := range pkgs {
@@ -339,9 +339,9 @@ func checkVersions(pkgs []*Package, prevFile string) error {
 		oldVersion, _ := old.Hash["version"].(string)
 		switch c := compareVersions(p.Version, oldVersion); {
 		case c < 0:
-			errs = append(errs, fmt.Errorf("%s : version %s plus ancienne que la version publiée %s", p.Name, p.Version, oldVersion))
+			errs = append(errs, fmt.Errorf("%s: version %s is older than the published version %s", p.Name, p.Version, oldVersion))
 		case c == 0 && fingerprint(p.Files) != oldFingerprint(old):
-			errs = append(errs, fmt.Errorf("%s : fichiers modifiés, montez la version (publiée : %s)", p.Name, oldVersion))
+			errs = append(errs, fmt.Errorf("%s: files changed, bump the version (published: %s)", p.Name, oldVersion))
 		}
 	}
 	return errors.Join(errs...)
@@ -428,11 +428,11 @@ func luaList(xs []string) string {
 	return "{" + strings.Join(q, ", ") + "}"
 }
 
-// indexLua produit l'index lu par pkg (format 1). Il est déterministe : le
-// même dépôt donne toujours le même fichier.
+// indexLua produces the index read by pkg (format 1). It is deterministic: the
+// same repository always gives the same file.
 func indexLua(pkgs []*Package) string {
 	var b strings.Builder
-	b.WriteString("-- Index des packages TERMINA, généré par tools/mkindex : ne pas modifier.\n")
+	b.WriteString("-- TERMINA package index, generated by tools/mkindex: do not edit.\n")
 	b.WriteString("return {\n  format = 1,\n  packages = {\n")
 	for _, p := range pkgs {
 		fmt.Fprintf(&b, "    [%s] = {\n", luaString(p.Name))

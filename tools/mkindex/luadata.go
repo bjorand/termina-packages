@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-// Lecteur minimal de « données Lua » : return { clé = valeur, ... } avec des
-// chaînes, des entiers, des booléens et des tables imbriquées. Les manifestes
-// package.lua et l'index publié n'utilisent que ça : un manifeste qui contient
-// du code (fonctions, appels, concaténations) est refusé.
+// Minimal reader for "Lua data": return { key = value, ... } with strings,
+// integers, booleans and nested tables. The package.lua manifests and the
+// published index use nothing else: a manifest that contains code (functions,
+// calls, concatenations) is rejected.
 
 type luaTable struct {
 	Array []any
@@ -26,7 +26,7 @@ func parseLuaData(name, src string) (*luaTable, error) {
 	p := &parser{src: src, name: name}
 	p.skip()
 	if !p.word("return") {
-		return nil, p.errorf("« return { ... } » attendu")
+		return nil, p.errorf("\"return { ... }\" expected")
 	}
 	p.skip()
 	v, err := p.value()
@@ -35,7 +35,7 @@ func parseLuaData(name, src string) (*luaTable, error) {
 	}
 	t, ok := v.(*luaTable)
 	if !ok {
-		return nil, p.errorf("une table est attendue après return")
+		return nil, p.errorf("a table is expected after return")
 	}
 	p.skip()
 	if p.pos < len(p.src) && p.src[p.pos] == ';' {
@@ -43,7 +43,7 @@ func parseLuaData(name, src string) (*luaTable, error) {
 		p.skip()
 	}
 	if p.pos != len(p.src) {
-		return nil, p.errorf("texte inattendu après la table")
+		return nil, p.errorf("unexpected text after the table")
 	}
 	return t, nil
 }
@@ -53,7 +53,7 @@ func (p *parser) errorf(format string, args ...any) error {
 	return fmt.Errorf("%s:%d: %s", p.name, line, fmt.Sprintf(format, args...))
 }
 
-// skip saute les blancs et les commentaires (-- ligne, --[[ bloc ]]).
+// skip skips whitespace and comments (-- line, --[[ block ]]).
 func (p *parser) skip() {
 	for p.pos < len(p.src) {
 		c := p.src[p.pos]
@@ -80,7 +80,7 @@ func (p *parser) skip() {
 	}
 }
 
-// longBracket reconnaît « [[ » ou « [==[ » : longueur de l'ouverture et niveau.
+// longBracket recognizes "[[" or "[==[": length of the opening and level.
 func longBracket(s string) (int, int) {
 	if !strings.HasPrefix(s, "[") {
 		return 0, 0
@@ -118,7 +118,7 @@ func (p *parser) word(w string) bool {
 
 func (p *parser) value() (any, error) {
 	if p.pos >= len(p.src) {
-		return nil, p.errorf("valeur attendue")
+		return nil, p.errorf("value expected")
 	}
 	c := p.src[p.pos]
 	switch {
@@ -130,7 +130,7 @@ func (p *parser) value() (any, error) {
 		if open, level := longBracket(p.src[p.pos:]); open > 0 {
 			end := strings.Index(p.src[p.pos+open:], "]"+strings.Repeat("=", level)+"]")
 			if end < 0 {
-				return nil, p.errorf("chaîne longue non terminée")
+				return nil, p.errorf("unfinished long string")
 			}
 			s := p.src[p.pos+open : p.pos+open+end]
 			s = strings.TrimPrefix(strings.TrimPrefix(s, "\r"), "\n")
@@ -145,7 +145,7 @@ func (p *parser) value() (any, error) {
 		}
 		n, err := strconv.ParseInt(p.src[start:p.pos], 10, 64)
 		if err != nil {
-			return nil, p.errorf("nombre invalide")
+			return nil, p.errorf("invalid number")
 		}
 		return n, nil
 	case isIdent(c, true):
@@ -155,10 +155,10 @@ func (p *parser) value() (any, error) {
 		case "false":
 			return false, nil
 		default:
-			return nil, p.errorf("« %s » : seules des données sont permises (chaînes, nombres, tables)", w)
+			return nil, p.errorf("\"%s\": only data is allowed (strings, numbers, tables)", w)
 		}
 	}
-	return nil, p.errorf("valeur inattendue « %c »", c)
+	return nil, p.errorf("unexpected value \"%c\"", c)
 }
 
 func (p *parser) str() (string, error) {
@@ -172,10 +172,10 @@ func (p *parser) str() (string, error) {
 		case c == q:
 			return b.String(), nil
 		case c == '\n':
-			return "", p.errorf("chaîne non terminée")
+			return "", p.errorf("unfinished string")
 		case c == '\\':
 			if p.pos >= len(p.src) {
-				return "", p.errorf("chaîne non terminée")
+				return "", p.errorf("unfinished string")
 			}
 			e := p.src[p.pos]
 			p.pos++
@@ -198,18 +198,18 @@ func (p *parser) str() (string, error) {
 					}
 					n, _ := strconv.Atoi(p.src[start:p.pos])
 					if n > 255 {
-						return "", p.errorf("échappement invalide")
+						return "", p.errorf("invalid escape")
 					}
 					b.WriteByte(byte(n))
 					continue
 				}
-				return "", p.errorf("échappement \\%c non géré", e)
+				return "", p.errorf("unsupported escape \\%c", e)
 			}
 		default:
 			b.WriteByte(c)
 		}
 	}
-	return "", p.errorf("chaîne non terminée")
+	return "", p.errorf("unfinished string")
 }
 
 func (p *parser) table() (*luaTable, error) {
@@ -218,7 +218,7 @@ func (p *parser) table() (*luaTable, error) {
 	for {
 		p.skip()
 		if p.pos >= len(p.src) {
-			return nil, p.errorf("« } » manquant")
+			return nil, p.errorf("\"}\" missing")
 		}
 		if p.src[p.pos] == '}' {
 			p.pos++
@@ -237,16 +237,16 @@ func (p *parser) table() (*luaTable, error) {
 				}
 				ks, ok := k.(string)
 				if !ok {
-					return nil, p.errorf("seules les clés chaînes sont permises")
+					return nil, p.errorf("only string keys are allowed")
 				}
 				p.skip()
 				if p.pos >= len(p.src) || p.src[p.pos] != ']' {
-					return nil, p.errorf("« ] » attendu")
+					return nil, p.errorf("\"]\" expected")
 				}
 				p.pos++
 				p.skip()
 				if p.pos >= len(p.src) || p.src[p.pos] != '=' {
-					return nil, p.errorf("« = » attendu")
+					return nil, p.errorf("\"=\" expected")
 				}
 				p.pos++
 				key, hasKey = ks, true
@@ -268,7 +268,7 @@ func (p *parser) table() (*luaTable, error) {
 		}
 		if hasKey {
 			if _, dup := t.Hash[key]; dup {
-				return nil, p.errorf("clé « %s » en double", key)
+				return nil, p.errorf("duplicate key \"%s\"", key)
 			}
 			t.Hash[key] = v
 		} else {
@@ -278,15 +278,15 @@ func (p *parser) table() (*luaTable, error) {
 		if p.pos < len(p.src) && (p.src[p.pos] == ',' || p.src[p.pos] == ';') {
 			p.pos++
 		} else if p.pos < len(p.src) && p.src[p.pos] != '}' {
-			return nil, p.errorf("« , » ou « } » attendu")
+			return nil, p.errorf("\",\" or \"}\" expected")
 		}
 	}
 }
 
-// ------------------------------------------------------------------ écriture
+// ------------------------------------------------------------------ writing
 
-// luaString écrit une chaîne Lua entre guillemets, relisible par le device
-// comme par parseLuaData.
+// luaString writes a quoted Lua string, readable by the device as well as by
+// parseLuaData.
 func luaString(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')

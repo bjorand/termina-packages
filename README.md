@@ -10,6 +10,7 @@ pkg info <name>       details
 pkg install <name>    install, with its dependencies
 pkg upgrade [name]    upgrade (everything by default)
 pkg remove <name>     uninstall
+pkg source            registries in use (pkg source add <name> <url>, pkg source remove <name>)
 ```
 
 A package can hold any kind of file: Lua programs and modules, shell scripts, data.
@@ -29,7 +30,7 @@ A package can hold any kind of file: Lua programs and modules, shell scripts, da
    - `index.html`: the catalog page.
 4. On the machine, `pkg update` downloads `index.lua`. `pkg install` then downloads the files one by one, checks their SHA-1 and installs the package into `A:\pkg\<name>\`. If anything fails, the version already installed stays in place.
 
-To use another registry (a fork, or a local test server): `pkg url http://192.168.1.10:8000/`.
+This registry is the machine's "main" one. To replace it (a fork, or a local test server): `pkg url http://192.168.1.10:8000/`. To add another registry next to it: `pkg source add <name> <url>`. Any repository can be one: `go run ./tools/mkindex -packages <dir> -out site` builds its site, as for [realm](https://github.com/bjorand/realm).
 
 ## Development
 

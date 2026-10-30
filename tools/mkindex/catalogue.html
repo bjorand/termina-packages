@@ -265,7 +265,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
       <tr><td><code>pkg install &lt;name&gt;...</code></td><td>Install, with its dependencies.</td></tr>
       <tr><td><code>pkg upgrade [name...]</code></td><td>Upgrade (everything by default).</td></tr>
       <tr><td><code>pkg remove [-f] &lt;name&gt;...</code></td><td>Uninstall (<code>-f</code>: even if another package depends on it).</td></tr>
-      <tr><td><code>pkg url [address]</code></td><td>Show or change the registry in use.</td></tr>
+      <tr><td><code>pkg source</code></td><td>Registries in use; <code>pkg source add &lt;name&gt; &lt;url&gt;</code> adds one after the others, <code>pkg source remove &lt;name&gt;</code> removes it.</td></tr>
+      <tr><td><code>pkg url [address]</code></td><td>Show or change the main registry (this one).</td></tr>
     </table></div>
 
     <h3>How it works</h3>
@@ -273,7 +274,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
       <li><code>pkg update</code> downloads <a href="index.lua">index.lua</a>, the list of packages with the size and SHA-1 of every file.</li>
       <li><code>pkg install</code> downloads the files one by one, checks each SHA-1, then installs the package into <code>A:\pkg\&lt;name&gt;\</code>. If anything fails, the version already installed stays in place.</li>
       <li>A package's commands run at the <code>A&gt;</code> prompt; its apps show up on the <code>win</code> desktop.</li>
-      <li>To use another registry (a fork, or a local test server): <code>pkg url http://192.168.1.10:8000/</code>.</li>
+      <li>This is the main registry. Others can sit next to it (<code>pkg source add</code>); to replace it (a fork, or a local test server): <code>pkg url http://192.168.1.10:8000/</code>.</li>
     </ul>
   </div>
 </section>

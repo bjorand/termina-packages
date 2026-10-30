@@ -1,2 +1,4 @@
-# LF partout : les SHA-1 de mkindex doivent être les mêmes sous Windows et en CI.
+# LF everywhere: the SHA-1 sums of mkindex must be the same on Windows and in CI.
 * text=auto eol=lf
+# Package data files stay byte for byte.
+*.art binary

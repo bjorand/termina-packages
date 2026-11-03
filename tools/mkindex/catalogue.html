@@ -76,7 +76,7 @@ h3 { font: 600 15px/1.4 var(--mono); color: var(--text); margin: 36px 0 10px; }
 }
 .search input:focus { border-color: rgba(98,255,166,.5); }
 .search input::placeholder { color: #3f8f63; }
-.search::before { content: "A>"; position: absolute; left: 15px; top: 50%; transform: translateY(-50%); font: 400 14px/1 var(--mono); color: var(--phos); pointer-events: none; }
+.search::before { content: "$"; position: absolute; left: 15px; top: 50%; transform: translateY(-50%); font: 400 14px/1 var(--mono); color: var(--phos); pointer-events: none; }
 .segments { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .segments button {
   font: 400 13px/1 var(--mono); padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line);
@@ -272,8 +272,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
     <h3>How it works</h3>
     <ul class="rules">
       <li><code>pkg update</code> downloads <a href="index.lua">index.lua</a>, the list of packages with the size and SHA-1 of every file.</li>
-      <li><code>pkg install</code> downloads the files one by one, checks each SHA-1, then installs the package into <code>A:\pkg\&lt;name&gt;\</code>. If anything fails, the version already installed stays in place.</li>
-      <li>A package's commands run at the <code>A&gt;</code> prompt; its apps show up on the <code>win</code> desktop.</li>
+      <li><code>pkg install</code> downloads the files one by one, checks each SHA-1, then installs the package into <code>/pkg/&lt;name&gt;/</code>. If anything fails, the version already installed stays in place.</li>
+      <li>A package's commands run at the shell prompt; its apps show up on the <code>win</code> desktop.</li>
       <li>This is the main registry. Others can sit next to it (<code>pkg source add</code>); to replace it (a fork, or a local test server): <code>pkg url http://192.168.1.10:8000/</code>.</li>
     </ul>
   </div>
@@ -299,17 +299,17 @@ return {
   description = "Snake in color",
   author = "Ada Lovelace",  <span class="c">-- optional</span>
   license = "MIT",          <span class="c">-- optional</span>
-  bin = { "snake2" },       <span class="c">-- optional: A&gt; commands</span>
+  bin = { "snake2" },       <span class="c">-- optional: shell commands</span>
   depends = { "tui" },      <span class="c">-- optional: other packages</span>
 }</pre>
     </div>
 
     <h3>Rules</h3>
     <ul class="rules">
-      <li><strong>Files</strong> can be anything (Lua programs, shell scripts, data...). They sit flat in the folder, <strong>64 KB at most</strong> each, 256 KB per package, and are installed as-is in <code>A:\pkg\&lt;name&gt;\</code>.</li>
+      <li><strong>Files</strong> can be anything (Lua programs, shell scripts, data...). They sit flat in the folder, <strong>64 KB at most</strong> each, 256 KB per package, and are installed as-is in <code>/pkg/&lt;name&gt;/</code>.</li>
       <li><strong>Lua files</strong> must be valid Lua 5.4 (CI checks the syntax): 32-bit numbers, no <code>io</code> or <code>os</code>, and the TERMINA API (<code>term</code>, <code>key</code>, <code>fs</code>, <code>net</code>, <code>win</code>...).</li>
       <li><strong>Commands:</strong> each name in <code>bin</code> needs its own <code>&lt;name&gt;.lua</code>. Pick names that won't collide.</li>
-      <li><strong>Modules:</strong> <code>require "&lt;package&gt;.util"</code> loads <code>A:\pkg\&lt;package&gt;\util.lua</code>.</li>
+      <li><strong>Modules:</strong> <code>require "&lt;package&gt;.util"</code> loads <code>/pkg/&lt;package&gt;/util.lua</code>.</li>
       <li><strong>Desktop apps:</strong> a file whose header has <code>-- @app Name</code> (and optionally <code>-- @icon name</code>) appears on the <code>win</code> desktop.</li>
       <li><strong>Versions:</strong> any change to a published package must bump its version, or CI rejects the pull request.</li>
     </ul>
@@ -332,7 +332,7 @@ return {
   </div>
   <div class="sheet-body">
     <p>{{.Description}}</p>
-    <div class="install"><code>A&gt;pkg install {{.Name}}</code><button type="button" class="copy" data-copy="pkg install {{.Name}}">copy</button></div>
+    <div class="install"><code>/$ pkg install {{.Name}}</code><button type="button" class="copy" data-copy="pkg install {{.Name}}">copy</button></div>
     <h3>Details</h3>
     <dl class="specs">
       {{if .Author}}<dt>Author</dt><dd>{{.Author}}</dd>{{end}}
@@ -343,7 +343,7 @@ return {
       <dt>Depends on</dt><dd>{{range .Depends}}<a class="pill" href="#p/{{.}}">{{.}}</a>{{else}}nothing{{end}}</dd>
       {{if .UsedBy}}<dt>Used by</dt><dd>{{range .UsedBy}}<a class="pill" href="#p/{{.}}">{{.}}</a>{{end}}</dd>{{end}}
     </dl>
-    <h3>Files installed in A:\pkg\{{.Name}}\</h3>
+    <h3>Files installed in /pkg/{{.Name}}/</h3>
     <div class="table-wrap"><table>
       <tr><th>File</th><th>Size</th><th>SHA-1</th></tr>
       {{range .Files}}<tr><td><a href="{{.Source}}">{{.Path}}</a></td><td>{{.SizeLabel}}</td><td><code title="{{.SHA1}}">{{.Short}}</code></td></tr>{{end}}

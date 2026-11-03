@@ -13,7 +13,7 @@ return {
   description = "Snake in color",  -- one line, 120 characters max
   author = "Ada Lovelace",         -- optional
   license = "MIT",                 -- optional
-  bin = { "snake2" },              -- optional: commands for the A> prompt
+  bin = { "snake2" },              -- optional: commands for the shell prompt
   depends = { "tui" },             -- optional: other packages from the registry
 }
 ```
@@ -22,15 +22,15 @@ The manifest holds data only: strings, numbers and lists. Functions, calls and v
 
 ## Rules
 
-- **Files:** any kind of file (Lua, shell scripts, data...), flat in the folder, without subfolders. They are installed as-is in `A:\pkg\<name>\`. Each file is **64 KB at most**, the limit for a script on the machine. A package is 256 KB at most in total, because the `A:` drive holds about 1.9 MB.
+- **Files:** any kind of file (Lua, shell scripts, data...), flat in the folder, without subfolders. They are installed as-is in `/pkg/<name>/`. Each file is **64 KB at most**, the limit for a script on the machine. A package is 256 KB at most in total, so that many fit on the machine's flash filesystem (about 11.9 MB, shared with everything else).
 - **Lua:** `.lua` files are Lua 5.4 with 32-bit numbers, and CI checks their syntax. There is no `io` or `os`, and memory is limited to 96 KB per script. The API (`term`, `key`, `fs`, `net`, `win`...) is described in the TERMINA README.
-- **Commands:** each name in `bin` needs its own `<name>.lua` file. Once installed, typing `<name>` at the prompt runs it. A `<name>.lua` file at the root of `A:` takes precedence, so pick names that are unlikely to collide (avoid `hello` or `snake`, for example).
-- **Modules:** a `util.lua` file in your package loads with `require "<package>.util"`, which looks for it in `A:\pkg\<package>\util.lua`. Another package that lists yours in its `depends` can do the same.
-- **Desktop apps:** a file whose header contains `-- @app Name` (and optionally `-- @icon name`) shows up on the `win` desktop, like the apps at the root of `A:`.
+- **Commands:** each name in `bin` needs its own `<name>.lua` file. Once installed, typing `<name>` at the prompt runs it. A `<name>.lua` file in `/` takes precedence, so pick names that are unlikely to collide (avoid `hello` or `snake`, for example).
+- **Modules:** a `util.lua` file in your package loads with `require "<package>.util"`, which looks for it in `/pkg/<package>/util.lua`. Another package that lists yours in its `depends` can do the same.
+- **Desktop apps:** a file whose header contains `-- @app Name` (and optionally `-- @icon name`) shows up on the `win` desktop, like the apps in `/`.
 - **Versions:** any change to a published package must bump its version, or CI rejects the PR. Machines only update a package when its version goes up.
 
 ## Security
 
-A package runs with the same rights as any Lua program on the machine. In particular, it can read and write all of `A:` and use the network. PRs are reviewed before they are merged: keep the code readable (no minified or obfuscated code), and don't send data to a server without saying so in the description.
+A package runs with the same rights as any Lua program on the machine. In particular, it can read and write the whole filesystem (the SD card included) and use the network. PRs are reviewed before they are merged: keep the code readable (no minified or obfuscated code), and don't send data to a server without saying so in the description.
 
 On the machine, every downloaded file is checked against its SHA-1 sum from the index. The index itself goes over HTTPS, but the machine does not verify TLS certificates.

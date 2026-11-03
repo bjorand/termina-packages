@@ -25,8 +25,8 @@ import (
 	"time"
 )
 
-// Machine limits: a script over 64 KB does not load, and the A: drive holds
-// about 1.9 MB.
+// Machine limits: a script over 64 KB does not load, and the flash
+// filesystem holds about 11.9 MB for everything.
 const (
 	maxFile    = 64 * 1024
 	maxPackage = 256 * 1024

@@ -6,11 +6,23 @@ local RED, GREEN, YELLOW, CYAN, DIM, NORMAL = 0x0C, 0x0A, 0x0E, 0x0B, 0x08, 0x07
 
 local HOST = "speed.cloudflare.com"
 local BASE = "https://" .. HOST
-local HEADERS = {["User-Agent"] = "termina-netbench/1.0"}
+local HEADERS = {["User-Agent"] = "termina-netbench/1.0.1"}
 local CONNECTS, REQUESTS = 5, 3
 local TMP = "/.netbench.tmp"  -- upload body, streamed from the filesystem
 
 local USAGE = "usage: netbench [-d <KB>] [-u <KB>] [-url <url>]  (-u 0: no upload)"
+
+-- Before TERMINA 2.5.1, an empty answer from a server that closes the
+-- connection at once (Cloudflare does) came back as an error although
+-- nothing was missing: take it as a 200.
+local function request(t)
+  local code, err = net.request(t)
+  if not code and err and (err:find("^incomplete body %(0/0 bytes%): not connected")
+                           or err:find("^incomplete body %(0/%? bytes%): not connected")) then
+    return 200
+  end
+  return code, err
+end
 
 local function say(text, attr)
   if attr then term.attr(attr) end
@@ -76,7 +88,7 @@ local function requesttest()
   for i = 1, REQUESTS do
     progress(string.format("  HTTPS request %d/%d...", i, REQUESTS))
     local t0 = sys.millis()
-    local code, err = net.request{url = BASE .. "/__down?bytes=0", headers = HEADERS}
+    local code, err = request{url = BASE .. "/__down?bytes=0", headers = HEADERS}
     if not code then error(err, 0) end
     if code ~= 200 then error("HTTP error " .. code, 0) end
     times[#times + 1] = sys.millis() - t0
@@ -91,7 +103,7 @@ end
 local function downloadtest(url)
   local t0 = sys.millis()
   local tbody, got = nil, 0
-  local code, err = net.request{url = url, headers = HEADERS, progress = function(n, total)
+  local code, err = request{url = url, headers = HEADERS, progress = function(n, total)
     local now = sys.millis()
     tbody = tbody or now
     got = n
@@ -123,7 +135,7 @@ local function uploadtest(size, latency)
   progress("  upload " .. bytes(size) .. "...")
   local t0 = sys.millis()
   local code
-  code, err = net.request{url = BASE .. "/__up", method = "POST", headers = HEADERS, bodyfile = TMP}
+  code, err = request{url = BASE .. "/__up", method = "POST", headers = HEADERS, bodyfile = TMP}
   local ms = sys.millis() - t0
   fs.remove(TMP)
   if not code then error(err, 0) end

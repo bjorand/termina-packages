@@ -23,7 +23,7 @@ The manifest holds data only: strings, numbers and lists. Functions, calls and v
 ## Rules
 
 - **Files:** any kind of file (Lua, shell scripts, data...), flat in the folder, without subfolders. They are installed as-is in `/pkg/<name>/`. Each file is **64 KB at most**, the limit for a script on the machine. A package is 256 KB at most in total, so that many fit on the machine's flash filesystem (about 11.9 MB, shared with everything else).
-- **Lua:** `.lua` files are Lua 5.4 with 32-bit numbers, and CI checks their syntax. There is no `io` or `os`, and memory is limited to 96 KB per script. The API (`term`, `key`, `fs`, `net`, `win`...) is described in the TERMINA README.
+- **Lua:** `.lua` files are Lua 5.4 with 32-bit numbers, and CI checks their syntax. The standard library is there (`io`, `os`, `package`...), and memory is limited to 96 KB per script. TERMINA's own API is in the `termina` table: start a file with the libraries it uses, `local term, fs, win = termina.term, termina.fs, termina.win` (TERMINA 3.1 or later; from 4.0, `termina.*` is the only way). It is described in the TERMINA README.
 - **Commands:** each name in `bin` needs its own `<name>.lua` file. Once installed, typing `<name>` at the prompt runs it. A `<name>.lua` file in `/` takes precedence, so pick names that are unlikely to collide (avoid `hello` or `snake`, for example).
 - **Modules:** a `util.lua` file in your package loads with `require "<package>.util"`, which looks for it in `/pkg/<package>/util.lua`. Another package that lists yours in its `depends` can do the same.
 - **Desktop apps:** a file whose header contains `-- @app Name` (and optionally `-- @icon name`) shows up on the `win` desktop, like the apps in `/`.

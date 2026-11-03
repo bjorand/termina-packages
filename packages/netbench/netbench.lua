@@ -2,6 +2,7 @@
 -- requests, then a download and an upload, against speed.cloudflare.com
 -- (or downloads a given URL). Nothing is sent but zeros and a user agent.
 -- Usage: netbench [-d <KB>] [-u <KB>] [-url <url>]
+local term, fs, sys, net, write = termina.term, termina.fs, termina.sys, termina.net, termina.write
 local RED, GREEN, YELLOW, CYAN, DIM, NORMAL = 0x0C, 0x0A, 0x0E, 0x0B, 0x08, 0x07
 
 local HOST = "speed.cloudflare.com"

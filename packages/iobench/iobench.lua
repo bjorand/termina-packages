@@ -2,6 +2,7 @@
 -- block sizes, does random 4 KB reads and creates small files, on / and on
 -- /mnt/sd when the card is mounted (or on the directories given).
 -- Usage: iobench [-s <KB>] [dir...]
+local term, fs, sys, write = termina.term, termina.fs, termina.sys, termina.write
 local RED, GREEN, YELLOW, CYAN, DIM, NORMAL = 0x0C, 0x0A, 0x0E, 0x0B, 0x08, 0x07
 
 local BLOCKS = {512, 4096, 16384}

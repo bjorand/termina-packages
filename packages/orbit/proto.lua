@@ -3,6 +3,7 @@
 -- server answers "<status> <meta>" CRLF, then the body (status 2x only) and
 -- closes. Certificates are mostly self-signed: the first one seen for a host
 -- is remembered in known_hosts and later ones are compared with it.
+local fs, sys, net = termina.fs, termina.sys, termina.net
 local M = {}
 
 M.PORT = 1965

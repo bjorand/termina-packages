@@ -5,6 +5,7 @@
 -- G types an address, U goes up one level, R reloads, B bookmarks the page,
 -- Shift+B lists the bookmarks, H help, Q or Esc quits.
 -- Pages up to 256 KB are read; other files can be saved to the filesystem.
+local term, key, fs, sys = termina.term, termina.key, termina.fs, termina.sys
 local proto = require "orbit.proto"
 local gemtext = require "orbit.gemtext"
 

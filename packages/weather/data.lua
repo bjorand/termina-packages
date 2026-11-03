@@ -1,6 +1,7 @@
 -- weather.data: what the desktop and terminal versions share. Open-Meteo
 -- requests (open-meteo.com, free, no key), a small JSON reader, weather
 -- codes, dates, the saved city and the dot font of the big temperature.
+local sys, store, net = termina.sys, termina.store, termina.net
 local M = {}
 
 function M.round(x) return math.floor(x + 0.5) end

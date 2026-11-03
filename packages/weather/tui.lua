@@ -2,6 +2,7 @@
 -- as the desktop window, drawn with CP437 blocks: a picture of the sky, the
 -- temperature in big digits, 24 hourly bars and 6 days.
 -- Keys: C change city, R refresh, U °C/°F, Q or Esc quit.
+local term, key, sys = termina.term, termina.key, termina.sys
 local wd = require "weather.data"
 local round, deg = wd.round, wd.deg
 

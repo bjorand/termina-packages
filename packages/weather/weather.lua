@@ -6,6 +6,7 @@
 -- Keys: C change city, R refresh, U switch between °C and °F.
 -- Clicking the city name also changes it.
 
+local sys, win = termina.sys, termina.win
 if not win then
   require "weather.tui"
   return

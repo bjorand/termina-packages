@@ -4,6 +4,7 @@
 -- the next 24 hours, the sun's course, the moon's phase, and the weather
 -- falling on the screen. From 22:00 to 07:00 everything turns dim red and
 -- stops moving. City and units are the Weather app's (weather [city]).
+local sys, screen = termina.sys, termina.screen
 local wd = require "weather.data"
 local font = require "nightstand.font"
 local sky = require "nightstand.sky"

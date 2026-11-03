@@ -5,6 +5,10 @@
 -- G types an address, U goes up one level, R reloads, B bookmarks the page,
 -- Shift+B lists the bookmarks, H help, Q or Esc quits.
 -- Pages up to 256 KB are read; other files can be saved to the filesystem.
+if not termina then  -- before 3.1, the libraries were globals
+  print("orbit needs TERMINA 3.1.0 or later, this is " .. (sys and sys.version() or "?"))
+  return
+end
 local term, key, fs, sys = termina.term, termina.key, termina.fs, termina.sys
 local proto = require "orbit.proto"
 local gemtext = require "orbit.gemtext"
@@ -15,12 +19,6 @@ local MAX_PAGE = 256 * 1024
 local MAX_REDIRECTS = 5
 local MAX_HISTORY = 20
 local WHEEL_LINES = 3
-
-local major, minor = (sys.version() or ""):match("^(%d+)%.(%d+)")
-if not major or tonumber(major) * 100 + tonumber(minor) < 206 then
-  print("orbit needs TERMINA 2.6.0 or later (TLS sockets), this is " .. (sys.version() or "?"))
-  return
-end
 
 local COLS, ROWS = term.cols(), term.rows()
 local TOP, BOTTOM = 2, ROWS - 2       -- content rows; row 1: address, last: footer

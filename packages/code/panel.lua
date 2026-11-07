@@ -215,31 +215,38 @@ end
 
 -- ------------------------------------------------------------------ drawing
 
+-- The title of a tab, with its count.
+local function label(t)
+  if t == "PROBLEMS" and #p.problems > 0 then return t .. " " .. #p.problems end
+  if t == "GIT" and gitui.available() then
+    local s, c = gitui.counts()
+    if s + c > 0 then return t .. " " .. (s + c) end
+  end
+  return t
+end
+
 -- The tab under column x of the header, if any.
 local function tabAt(r, x)
   local cx = r.x + 1
   for _, t in ipairs(M.TABS) do
-    local w = #t + 2
+    local w = #label(t) + 2
     if x >= cx and x < cx + w then return t end
     cx = cx + w + 1
   end
   return nil
 end
+M.tabAt = tabAt
 
-function M.draw(r, focused, root)
-  -- header
-  ui.put(r.x, r.y, "", ui.FRAME, r.w)
+-- resizing: the header is being dragged (it is drawn brighter).
+function M.draw(r, focused, root, resizing)
+  -- header: a line between the tabs, the handle to resize the panel
+  ui.hline(r.x, r.y, r.w, resizing and ui.BRIGHT or ui.FRAME)
   local cx = r.x + 1
   for _, t in ipairs(M.TABS) do
-    local label = t
-    if t == "PROBLEMS" and #p.problems > 0 then label = t .. " " .. #p.problems end
-    if t == "GIT" and gitui.available() then
-      local s, c = gitui.counts()
-      if s + c > 0 then label = t .. " " .. (s + c) end
-    end
+    local name = label(t)
     local attr = t == p.tab and (focused and ui.TAB_ACTIVE or ui.BRIGHT) or ui.HEADER
-    ui.put(cx, r.y, " " .. label .. " ", attr)
-    cx = cx + #label + 3
+    ui.put(cx, r.y, " " .. name .. " ", attr)
+    cx = cx + #name + 3
   end
   if p.tab == "TERMINAL" and p.job then
     ui.put(r.x + r.w - 22, r.y, " running: Ctrl+C stops", ui.WARN, 22)
@@ -272,6 +279,7 @@ function M.draw(r, focused, root)
     rows, sel, top = p.problems, p.psel, p.ptop
     if #rows == 0 then
       ui.put(body.x, body.y, "  No problems in the open files.", ui.DIM, body.w)
+      body = {x = body.x, y = body.y + 1, w = body.w, h = body.h - 1}
     end
   elseif p.tab == "SEARCH" then
     p.rtop = listScroll(p.rsel, p.rtop, body.h - 1)
@@ -281,6 +289,7 @@ function M.draw(r, focused, root)
   else
     if not gitui.available() then
       ui.put(body.x, body.y, "  Not a git repository.", ui.DIM, body.w)
+      body = {x = body.x, y = body.y + 1, w = body.w, h = body.h - 1}
       rows, sel, top = {}, 1, 1
     else
       local st = gitui.state
@@ -303,7 +312,7 @@ function M.draw(r, focused, root)
     local e = rows[i]
     local y = body.y + row
     if not e then
-      if not (row == 0 and p.tab == "PROBLEMS" and #rows == 0) then ui.put(body.x, y, "", ui.TEXT, body.w) end
+      ui.put(body.x, y, "", ui.TEXT, body.w)
     else
       local text, attr
       if p.tab == "PROBLEMS" then

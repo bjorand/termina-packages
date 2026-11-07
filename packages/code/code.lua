@@ -42,6 +42,7 @@ local comp                       -- completion popup: {items, sel, top, word}
 local lastEdit = 0
 local running = true
 local dragSplit = false          -- resizing the explorer with the mouse
+local dragPanel = false          -- resizing the panel (its header) with the mouse
 local fileList                   -- the files under root, for quick open
 
 -- ------------------------------------------------------------------ helpers
@@ -816,7 +817,11 @@ local function draw()
   else
     drawWelcome(R.editor)
   end
-  if showPanel then panel.draw(R.panel, focus == "panel", root) end
+  if showPanel then
+    panel.draw(R.panel, focus == "panel", root, dragPanel)
+    -- where the two borders meet
+    if showTree then term.cell(R.tree.w, R.panel.y, ui.TEE_RIGHT, (dragSplit or dragPanel) and ui.BRIGHT or ui.FRAME) end
+  end
   drawStatus()
   drawCompletion()
   if focus == "editor" and b and comp then
@@ -868,7 +873,7 @@ local action      -- handles what the panel asks for (defined below)
 local function onMouse(e)
   local b = current()
   if e.type == "mouse" and not e.down and e.button == 0 then
-    dragSplit = false
+    dragSplit, dragPanel = false, false
     if dragTarget == "editor" and b then view.mouse(b, e, R.editor) end
     dragTarget = nil
     return
@@ -876,6 +881,9 @@ local function onMouse(e)
   if e.type == "move" then
     if dragSplit then
       treeW = math.max(10, math.min(COLS - 30, e.x))
+    elseif dragPanel then
+      -- the header follows the pointer: the panel goes down to the status bar
+      panelH = math.max(3, math.min(ROWS - 7, ROWS - 1 - e.y))
     elseif dragTarget == "editor" and b then
       view.mouse(b, e, R.editor)
     end
@@ -899,6 +907,11 @@ local function onMouse(e)
   local pressed = e.type == "mouse" and e.down
   if showTree and e.x == R.tree.w and pressed and e.button == 0 and e.y >= 1 and e.y < ROWS - 1 then
     dragSplit = true
+    return
+  end
+  if showPanel and pressed and e.button == 0 and e.y == R.panel.y and ui.inside(R.panel, e.x, e.y) and
+      not panel.tabAt(R.panel, e.x) then
+    dragPanel = true
     return
   end
   if showTree and ui.inside(R.tree, e.x, e.y) then

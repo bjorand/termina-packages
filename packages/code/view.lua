@@ -13,13 +13,17 @@ local function gutterWidth(b)
 end
 M.gutterWidth = gutterWidth
 
--- Keeps the cursor inside the view.
+-- Brings the cursor back into the view when it moved or the text changed;
+-- otherwise (the wheel) the view stays where it was scrolled.
 function M.scroll(b, r)
   local tw = r.w - gutterWidth(b)
-  if b.cy < b.top then b.top = b.cy end
-  if b.cy >= b.top + r.h then b.top = b.cy - r.h + 1 end
-  if b.cx < b.left then b.left = math.max(0, b.cx - 4) end
-  if b.cx >= b.left + tw then b.left = b.cx - tw + 5 end
+  if b.cy ~= b.seenCy or b.cx ~= b.seenCx or b.changes ~= b.seenChanges then
+    b.seenCy, b.seenCx, b.seenChanges = b.cy, b.cx, b.changes
+    if b.cy < b.top then b.top = b.cy end
+    if b.cy >= b.top + r.h then b.top = b.cy - r.h + 1 end
+    if b.cx < b.left then b.left = math.max(0, b.cx - 4) end
+    if b.cx >= b.left + tw then b.left = b.cx - tw + 5 end
+  end
   b.top = math.max(1, math.min(b.top, math.max(1, #b.lines - r.h + 1)))
 end
 

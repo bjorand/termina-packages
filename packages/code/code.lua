@@ -873,6 +873,7 @@ local dragTarget  -- the pane a mouse button went down in
 local action      -- handles what the panel asks for (defined below)
 
 local function onMouse(e)
+  layout()  -- a pane may have been shown or hidden since the last drawing
   local b = current()
   if e.type == "mouse" and not e.down and e.button == 0 then
     dragSplit, dragPanel = false, false
@@ -1026,6 +1027,7 @@ function action(act)
 end
 
 local function onKey(e)
+  layout()  -- a pane may have been shown or hidden since the last drawing
   local b = current()
   local k = e.type == "key" and e.key or nil
   local ctrl, shift, alt = e.ctrl, e.shift, e.alt

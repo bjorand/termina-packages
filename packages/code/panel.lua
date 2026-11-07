@@ -46,12 +46,14 @@ local function vtScrollTo(v, first)
   v:scroll(hist - (first - 1) - v:scroll())
 end
 
-local function ensureVt(r)
+-- The vt, opened at the size of r, or resized to it (which loses its
+-- history: not while the panel is being resized with the mouse, keep).
+local function ensureVt(r, keep)
   local w, h = vtSize(r)
   if not p.vt then
     p.vt = vt.open(w, h)
     p.vt:write("\27[90mCommands run here; !command runs it full screen. Ctrl+C stops one.\27[0m\n")
-  else
+  elseif r.h >= 3 and not keep then
     local cw, ch = p.vt:size()
     if cw ~= w or ch ~= h then p.vt:resize(w, h) end
   end
@@ -130,6 +132,95 @@ function M.tick()
   return changed
 end
 
+-- ------------------------------------------------------------------ completion
+
+local helpNames  -- the commands of the shell, from "help" (read once)
+
+-- Names of the commands: those of the shell, then the .lua and .sh programs
+-- and the package commands along PATH (from the terminal's directory).
+local function commandNames()
+  if not helpNames then
+    helpNames = {}
+    local h = io.popen("help")
+    if h then
+      for line in h:lines() do
+        local n = line:match("^  (%S+)")
+        if n then helpNames[#helpNames + 1] = n end
+      end
+      h:close()
+    end
+  end
+  local out = {}
+  for _, n in ipairs(helpNames) do out[#out + 1] = n end
+  for dir in ((os.getenv("PATH") or ".:/:/.pkg/bin") .. ":"):gmatch("([^:]*):") do
+    local d = resolve(dir == "" and "." or dir)
+    local bin = d:match("/%.pkg/bin$")
+    for _, e in ipairs(fs.dir(d) or {}) do
+      local n = not e.dir and (e.name:match("^(.+)%.lua$") or e.name:match("^(.+)%.sh$") or (bin and e.name))
+      if n then out[#out + 1] = n end
+    end
+  end
+  return out
+end
+
+local lastTab = {t = 0, input = nil}
+
+-- Tab: completes the word before the cursor, a command name first on the
+-- line, otherwise a file or folder name. Several choices: as far as they
+-- agree, and a second Tab lists them in the terminal.
+local function complete(v)
+  local before = ui.sub(p.input, 1, p.pos)
+  local after = ui.sub(p.input, p.pos + 1)
+  local word = before:match("(%S*)$")
+  local head = before:sub(1, #before - #word)
+  local found, list = {}, {}
+  local function add(full, shown)
+    if not found[full] then
+      found[full] = true
+      list[#list + 1] = {full = full, shown = shown}
+    end
+  end
+  if (not head:match("%S") or head:match("[|;&]%s*$")) and not word:find("/") then
+    for _, n in ipairs(commandNames()) do
+      if n:sub(1, #word) == word then add(n .. " ", n) end
+    end
+  end
+  local dir, base = word:match("^(.*/)([^/]*)$")
+  if not dir then dir, base = "", word end
+  for _, e in ipairs(fs.dir(resolve(dir == "" and "." or dir)) or {}) do
+    if e.name:sub(1, #base) == base and (e.name:sub(1, 1) ~= "." or base:sub(1, 1) == ".") then
+      add(dir .. e.name .. (e.dir and "/" or " "), e.name .. (e.dir and "/" or ""))
+    end
+  end
+  if #list == 0 then return end
+  table.sort(list, function(a, b) return a.full < b.full end)
+  local new
+  if #list == 1 then
+    new = list[1].full
+  else
+    new = list[1].full:gsub(" $", "")
+    for _, m in ipairs(list) do
+      local i = 0
+      while i < #new and new:sub(i + 1, i + 1) == m.full:sub(i + 1, i + 1) do i = i + 1 end
+      new = new:sub(1, i)
+    end
+    if new == word then
+      local now = termina.sys.millis()
+      if lastTab.input == p.input and now - lastTab.t < 1500 then
+        local names = {}
+        for _, m in ipairs(list) do names[#names + 1] = m.shown end
+        v:scroll(false)
+        v:write("\27[92m" .. prompt() .. "\27[0m" .. p.input .. "\n" .. table.concat(names, "  ") .. "\n")
+      end
+      lastTab.t, lastTab.input = now, p.input
+      return
+    end
+  end
+  p.input = head .. new .. after
+  p.pos = ui.len(head .. new)
+  lastTab.input = nil
+end
+
 local function termKey(e, r)
   local v = ensureVt(r)
   if e.type == "char" then
@@ -176,8 +267,10 @@ local function termKey(e, r)
     p.pos = ui.len(p.input)
   elseif k == "esc" then
     p.input, p.pos = "", 0
+  elseif k == "tab" and not e.ctrl then
+    complete(v)
   else
-    return k ~= "tab" and not e.ctrl and not k:match("^f%d")
+    return not e.ctrl and not k:match("^f%d")
   end
   return true
 end
@@ -266,10 +359,17 @@ function M.draw(r, focused, root, resizing)
   end
   local body = {x = r.x, y = r.y + 1, w = r.w, h = r.h - 1}
   if p.tab == "TERMINAL" then
-    local v = ensureVt(r)
+    local v = ensureVt(r, resizing)
     -- v:scroll() marks the vt as changed: read the position before drawing it
     local total, first, shown = vtLines(v)
-    v:draw(body.x, body.y, body.w - 1, body.h - 1)
+    local _, vh = v:size()
+    if resizing then  -- the vt keeps its size until the mouse is released
+      local rows = body.h - 1
+      if vh < rows then ui.fill(body.x, body.y, body.w - 1, rows - vh, ui.TEXT) end
+      v:draw(body.x, body.y + math.max(0, rows - vh), body.w - 1, math.min(vh, rows))
+    else
+      v:draw(body.x, body.y, body.w - 1, body.h - 1)
+    end
     ui.scrollbar(body.x + body.w - 1, body.y, body.h - 1, total, first, shown)
     local iy = r.y + r.h - 1
     if p.job then

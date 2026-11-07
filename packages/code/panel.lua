@@ -267,8 +267,9 @@ function M.draw(r, focused, root, resizing)
   local body = {x = r.x, y = r.y + 1, w = r.w, h = r.h - 1}
   if p.tab == "TERMINAL" then
     local v = ensureVt(r)
-    v:draw(body.x, body.y, body.w - 1, body.h - 1)
+    -- v:scroll() marks the vt as changed: read the position before drawing it
     local total, first, shown = vtLines(v)
+    v:draw(body.x, body.y, body.w - 1, body.h - 1)
     ui.scrollbar(body.x + body.w - 1, body.y, body.h - 1, total, first, shown)
     local iy = r.y + r.h - 1
     if p.job then

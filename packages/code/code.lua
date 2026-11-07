@@ -802,7 +802,8 @@ end
 
 local function draw()
   layout()
-  term.showcursor(false)
+  -- The focused pane shows or hides the cursor itself: hiding it first and
+  -- showing it again would make it flicker.
   local b = current()
   -- explorer and its border
   if showTree then
@@ -830,6 +831,7 @@ local function draw()
     term.cursor(r.x + view.gutterWidth(b) + b.cx - b.left, r.y + b.cy - b.top)
     term.showcursor(true)
   end
+  if focus == "tree" then term.showcursor(false) end
 end
 
 -- ------------------------------------------------------------------ input

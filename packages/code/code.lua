@@ -874,7 +874,9 @@ local function onMouse(e)
   local b = current()
   if e.type == "mouse" and not e.down and e.button == 0 then
     dragSplit, dragPanel = false, false
-    if dragTarget == "editor" and b then view.mouse(b, e, R.editor) end
+    if dragTarget == "editor" and b then view.mouse(b, e, R.editor)
+    elseif dragTarget == "tree" then tree.mouse(e, R.tree)
+    elseif dragTarget == "panel" then panel.mouse(e, R.panel) end
     dragTarget = nil
     return
   end
@@ -886,6 +888,10 @@ local function onMouse(e)
       panelH = math.max(3, math.min(ROWS - 7, ROWS - 1 - e.y))
     elseif dragTarget == "editor" and b then
       view.mouse(b, e, R.editor)
+    elseif dragTarget == "tree" then
+      tree.mouse(e, R.tree)
+    elseif dragTarget == "panel" then
+      panel.mouse(e, R.panel)
     end
     return
   end
@@ -915,7 +921,10 @@ local function onMouse(e)
     return
   end
   if showTree and ui.inside(R.tree, e.x, e.y) then
-    if pressed then focus = "tree" comp = nil end
+    if pressed then
+      focus, comp = "tree", nil
+      if e.button == 0 then dragTarget = "tree" end
+    end
     local act = tree.mouse(e, R.tree)
     if type(act) == "table" then
       if act.open then
@@ -944,7 +953,10 @@ local function onMouse(e)
     return
   end
   if showPanel and ui.inside(R.panel, e.x, e.y) then
-    if pressed then focus = "panel" comp = nil end
+    if pressed then
+      focus, comp = "panel", nil
+      if e.button == 0 then dragTarget = "panel" end
+    end
     local act = panel.mouse(e, R.panel)
     if type(act) == "table" then return action(act) end
     return

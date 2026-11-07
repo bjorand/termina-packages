@@ -32,6 +32,8 @@ M.DELETED = 0x0C
 M.POPUP = 0x70
 M.POPUP_SEL = 0x1F
 M.POPUP_DIM = 0x78
+M.TRACK = 0x08              -- scroll bars
+M.THUMB = 0x07
 
 -- Characters (CP437).
 M.VBAR = "\u{2502}"
@@ -50,6 +52,8 @@ M.FUNC = "\u{0192}"
 M.BLOCK = "\u{258C}"        -- gutter mark
 M.LOWER = "\u{2584}"        -- gutter: lines removed below
 M.UP, M.DOWN = "\u{2191}", "\u{2193}"
+M.TRACK_CH = "\u{2591}"
+M.THUMB_CH = "\u{2588}"
 
 -- ------------------------------------------------------------------ text
 
@@ -131,6 +135,33 @@ function M.box(x, y, w, h, attr, title)
   end
   M.put(x, y + h - 1, M.CORNER_BL .. string.rep(M.HBAR, w - 2) .. M.CORNER_BR, attr)
   if title and title ~= "" then M.put(x + 2, y, " " .. M.fit(title, math.min(M.len(title), w - 6)) .. " ", attr) end
+end
+
+-- A vertical scroll bar of h cells at (x, y), for a view showing `visible`
+-- items out of `total`, the first one being item `first` (from 1). Without
+-- anything to scroll, an empty column.
+function M.scrollbar(x, y, h, total, first, visible)
+  if total <= visible then
+    for i = 0, h - 1 do term.cell(x, y + i, " ", M.TEXT) end
+    return
+  end
+  local size = math.max(1, h * visible // total)
+  local pos = (first - 1) * (h - size) // math.max(1, total - visible)
+  pos = math.max(0, math.min(h - size, pos))
+  for i = 0, h - 1 do
+    if i >= pos and i < pos + size then term.cell(x, y + i, M.THUMB_CH, M.THUMB)
+    else term.cell(x, y + i, M.TRACK_CH, M.TRACK) end
+  end
+end
+
+-- The first item to show when the bar of M.scrollbar is clicked or dragged
+-- at row y: the thumb is centered there.
+function M.scrollTo(y, y0, h, total, visible)
+  if total <= visible then return 1 end
+  local size = math.max(1, h * visible // total)
+  local span = math.max(1, h - size)
+  local pos = math.max(0, math.min(span, y - y0 - size // 2))
+  return 1 + (pos * (total - visible) + span // 2) // span
 end
 
 -- Whether (x, y) is inside the rectangle r = {x, y, w, h}.

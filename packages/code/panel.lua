@@ -29,8 +29,21 @@ end
 
 -- ------------------------------------------------------------------ terminal
 
+-- The vt fills the panel but its header, its input line and the scroll bar.
 local function vtSize(r)
-  return math.max(2, r.w), math.max(1, r.h - 2)
+  return math.max(2, r.w - 1), math.max(1, r.h - 2)
+end
+
+-- The terminal's scroll bar: total lines, first one shown, lines shown.
+local function vtLines(v)
+  local _, rows, hist = v:size()
+  return rows + hist, hist - v:scroll() + 1, rows
+end
+
+-- Scrolls the terminal so that line first (of vtLines) is at the top.
+local function vtScrollTo(v, first)
+  local _, _, hist = v:size()
+  v:scroll(hist - (first - 1) - v:scroll())
 end
 
 local function ensureVt(r)
@@ -254,7 +267,9 @@ function M.draw(r, focused, root, resizing)
   local body = {x = r.x, y = r.y + 1, w = r.w, h = r.h - 1}
   if p.tab == "TERMINAL" then
     local v = ensureVt(r)
-    v:draw(body.x, body.y, body.w, body.h - 1)
+    v:draw(body.x, body.y, body.w - 1, body.h - 1)
+    local total, first, shown = vtLines(v)
+    ui.scrollbar(body.x + body.w - 1, body.y, body.h - 1, total, first, shown)
     local iy = r.y + r.h - 1
     if p.job then
       ui.put(r.x, iy, "  " .. p.job, ui.DIM, r.w)
@@ -389,6 +404,26 @@ function M.key(e, r)
 end
 
 function M.mouse(e, r)
+  -- the terminal's scroll bar, clicked or dragged
+  local barX, barY, barH = r.x + r.w - 1, r.y + 1, r.h - 2
+  if e.type == "mouse" and e.button == 0 and not e.down then
+    p.dragBar = false
+    return true
+  end
+  if e.type == "move" then
+    if p.dragBar and p.vt then
+      local total, _, shown = vtLines(p.vt)
+      vtScrollTo(p.vt, ui.scrollTo(e.y, barY, barH, total, shown))
+    end
+    return true
+  end
+  if e.type == "mouse" and e.down and e.button == 0 and p.tab == "TERMINAL" and p.vt and
+      e.x == barX and e.y >= barY and e.y < barY + barH then
+    p.dragBar = true
+    local total, _, shown = vtLines(p.vt)
+    vtScrollTo(p.vt, ui.scrollTo(e.y, barY, barH, total, shown))
+    return true
+  end
   if e.type == "mouse" and e.down and e.button == 0 and e.y == r.y then
     local t = tabAt(r, e.x)
     if t then p.tab = t end

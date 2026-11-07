@@ -117,7 +117,7 @@ function M.draw(r, focused, gitstate, current)
     local e = tree.rows[i]
     local y = files.y + row
     if not e then
-      ui.put(files.x, y, "", ui.TEXT, files.w)
+      ui.put(files.x, y, "", ui.TEXT, files.w - 1)
     else
       local st = gitstate(e.path, e.dir)
       local attr = e.dir and ui.DIR or ui.ITEM
@@ -132,9 +132,10 @@ function M.draw(r, focused, gitstate, current)
       local icon = e.dir and (tree.open[e.path] and ui.OPEN or ui.CLOSED) or " "
       local mark = (not e.dir and st) and (" " .. st) or ""
       local label = string.rep(" ", e.depth) .. icon .. " " .. e.name
-      ui.put(files.x, y, ui.fit(label, files.w - #mark) .. mark, attr, files.w)
+      ui.put(files.x, y, ui.fit(label, files.w - 1 - #mark) .. mark, attr, files.w - 1)
     end
   end
+  ui.scrollbar(files.x + files.w - 1, files.y, files.h, #tree.rows, tree.top, files.h)
   if outline.h > 0 then
     local oattr = focused and tree.part == "outline" and ui.HEADER_FOCUS or ui.HEADER
     ui.put(r.x, oy, " OUTLINE", oattr, r.w)
@@ -216,17 +217,35 @@ end
 -- Mouse: same actions as keys.
 function M.mouse(e, r)
   local files, outline = parts(r)
+  -- scrolls the files to row t, the selection staying in view
+  local function setTop(t)
+    tree.top = math.max(1, math.min(t, #tree.rows - files.h + 1))
+    if tree.sel < tree.top then tree.sel = tree.top end
+    if tree.sel >= tree.top + files.h then tree.sel = tree.top + files.h - 1 end
+  end
+  local barX = files.x + files.w - 1
   if e.type == "wheel" then
     if ui.inside(outline, e.x, e.y) then
       tree.otop = math.max(1, math.min(#tree.outline, tree.otop - e.n * 3))
     else
-      tree.top = math.max(1, math.min(#tree.rows, tree.top - e.n * 3))
-      if tree.sel < tree.top then tree.sel = tree.top end
-      if tree.sel >= tree.top + files.h then tree.sel = tree.top + files.h - 1 end
+      setTop(tree.top - e.n * 3)
     end
     return true
   end
+  if e.type == "mouse" and e.button == 0 and not e.down then
+    tree.dragBar = false
+    return true
+  end
+  if e.type == "move" then
+    if tree.dragBar then setTop(ui.scrollTo(e.y, files.y, files.h, #tree.rows, files.h)) end
+    return true
+  end
   if e.type ~= "mouse" or not e.down or e.button ~= 0 then return e.type == "mouse" end
+  if e.x == barX and ui.inside(files, e.x, e.y) and #tree.rows > files.h then
+    tree.part, tree.dragBar = "files", true
+    setTop(ui.scrollTo(e.y, files.y, files.h, #tree.rows, files.h))
+    return true
+  end
   if ui.inside(outline, e.x, e.y) then
     local i = tree.otop + e.y - outline.y
     if tree.outline[i] then

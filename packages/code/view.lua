@@ -16,7 +16,7 @@ M.gutterWidth = gutterWidth
 -- Brings the cursor back into the view when it moved or the text changed;
 -- otherwise (the wheel) the view stays where it was scrolled.
 function M.scroll(b, r)
-  local tw = r.w - gutterWidth(b)
+  local tw = r.w - gutterWidth(b) - 1
   if b.cy ~= b.seenCy or b.cx ~= b.seenCx or b.changes ~= b.seenChanges then
     b.seenCy, b.seenCx, b.seenChanges = b.cy, b.cx, b.changes
     if b.cy < b.top then b.top = b.cy end
@@ -39,10 +39,11 @@ local function withBg(attrs, from, to, bg)
   return attrs:sub(1, from - 1) .. mid .. attrs:sub(to + 1)
 end
 
--- Draws buffer b in r = {x, y, w, h}. find: text to mark in the view.
+-- Draws buffer b in r = {x, y, w, h}, its scroll bar in the last column.
+-- find: text to mark in the view.
 function M.draw(b, r, focused, find)
   local gw = gutterWidth(b)
-  local tx, tw = r.x + gw, r.w - gw
+  local tx, tw = r.x + gw, r.w - gw - 1
   local sl1, sc1, sl2, sc2 = b:selection()
   local needle = find and find ~= "" and find:lower() or nil
   for row = 0, r.h - 1 do
@@ -50,7 +51,7 @@ function M.draw(b, r, focused, find)
     local y = r.y + row
     local s = b.lines[l]
     if not s then
-      ui.put(r.x, y, "", ui.TEXT, r.w)
+      ui.put(r.x, y, "", ui.TEXT, r.w - 1)
     else
       -- gutter
       local diag = b.diags[l]
@@ -99,6 +100,7 @@ function M.draw(b, r, focused, find)
       term.putattr(tx, y, text, attrs, tw, ui.TEXT)
     end
   end
+  ui.scrollbar(r.x + r.w - 1, r.y, r.h, #b.lines, b.top, r.h)
   if focused then
     local cy, cx = b.cy - b.top, b.cx - b.left
     if cy >= 0 and cy < r.h and cx >= 0 and cx < tw then
@@ -358,7 +360,8 @@ end
 
 -- ------------------------------------------------------------------ mouse
 
-local drag  -- the buffer being selected with the mouse
+local drag     -- the buffer being selected with the mouse
+local dragBar  -- the buffer whose scroll bar is being dragged
 
 -- Handles a mouse event inside the view; returns true if it used it.
 function M.mouse(b, e, r)
@@ -368,7 +371,12 @@ function M.mouse(b, e, r)
   end
   if e.type == "mouse" and e.button == 0 then
     if not e.down then
-      drag = nil
+      drag, dragBar = nil, nil
+      return true
+    end
+    if e.x == r.x + r.w - 1 then  -- the scroll bar
+      dragBar = b
+      b.top = ui.scrollTo(e.y, r.y, r.h, #b.lines, r.h)
       return true
     end
     local l, c = M.posAt(b, r, e.x, e.y)
@@ -396,6 +404,10 @@ function M.mouse(b, e, r)
     end
     return true
   end
+  if e.type == "move" and dragBar == b and e.buttons & 1 ~= 0 then
+    b.top = ui.scrollTo(e.y, r.y, r.h, #b.lines, r.h)
+    return true
+  end
   if e.type == "move" and drag == b and e.buttons & 1 ~= 0 then
     local y = e.y
     if y < r.y then b.top = math.max(1, b.top - 1); y = r.y
@@ -413,7 +425,7 @@ function M.dragging()
 end
 
 function M.stopDrag()
-  drag = nil
+  drag, dragBar = nil, nil
 end
 
 return M

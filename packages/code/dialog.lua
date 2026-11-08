@@ -2,12 +2,12 @@
 -- what is typed (quick open, command palette), ask() a line of input,
 -- confirm() a yes/no question, menu() a context menu at the pointer.
 -- Each one runs until it is answered; the caller redraws everything after.
-local term = termina.term
+local host = require "code.host"
+local term = host.term
 local ui = require "code.ui"
 
 local M = {}
 
-local COLS, ROWS = term.cols(), term.rows()
 
 -- How well query matches label: nil if its characters are not all there in
 -- order; higher for consecutive characters and the start of words.
@@ -29,6 +29,11 @@ end
 -- Edits a one-line input: returns the new text and cursor, or nil if the
 -- key is not an editing key.
 local function editLine(e, text, pos)
+  if e.type == "paste" then  -- the first line of text pasted from the terminal
+    local t = e.text:gsub("[\r\n].*", "")
+    local b = ui.offset(text, pos)
+    return text:sub(1, b - 1) .. t .. text:sub(b), pos + ui.len(t)
+  end
   if e.type == "char" then
     local b = ui.offset(text, pos)
     return text:sub(1, b - 1) .. e.ch .. text:sub(b), pos + 1
@@ -41,7 +46,7 @@ local function editLine(e, text, pos)
   if k == "home" then return text, 0 end
   if k == "end" then return text, n end
   if e.ctrl and k == "v" then
-    local t = termina.sys.clipboard():gsub("[\r\n].*", "")
+    local t = host.sys.clipboard():gsub("[\r\n].*", "")
     local b = ui.offset(text, pos)
     return text:sub(1, b - 1) .. t .. text:sub(b), pos + ui.len(t)
   end
@@ -61,6 +66,7 @@ end
 -- items: list of {label, detail}; returns the item chosen, or nil (Esc).
 -- opts: {title, text (initial query), width}
 function M.pick(items, opts)
+  local COLS, ROWS = term.cols(), term.rows()
   opts = opts or {}
   local w = math.min(COLS - 4, opts.width or 70)
   local h = math.min(ROWS - 6, 18)
@@ -112,7 +118,7 @@ function M.pick(items, opts)
       elseif not ui.inside({x = x, y = y, w = w, h = h}, e.x, e.y) then
         return nil
       end
-    elseif e.type == "key" or e.type == "char" then
+    elseif e.type == "key" or e.type == "char" or e.type == "paste" then
       local t, p = editLine(e, text, pos)
       if t then
         local changed = t ~= text
@@ -125,6 +131,7 @@ end
 
 -- A line of input in a box; returns the text, or nil (Esc).
 function M.ask(question, default)
+  local COLS, ROWS = term.cols(), term.rows()
   local w = math.min(COLS - 4, math.max(50, ui.len(question) + 30))
   local x, y = (COLS - w) // 2, 2
   local text, pos = default or "", ui.len(default or "")
@@ -137,7 +144,7 @@ function M.ask(question, default)
     if e.type == "mouse" and e.down and not ui.inside({x = x, y = y, w = w, h = 3}, e.x, e.y) then
       return nil
     end
-    if e.type == "key" or e.type == "char" then
+    if e.type == "key" or e.type == "char" or e.type == "paste" then
       local t, p = editLine(e, text, pos)
       if t then text, pos = t, p end
     end
@@ -147,6 +154,7 @@ end
 -- A question answered by one of the keys of choices ("yn", "ync");
 -- returns that letter, or nil (Esc).
 function M.confirm(question, choices)
+  local COLS, ROWS = term.cols(), term.rows()
   choices = choices or "yn"
   local hint = "(" .. choices:upper():gsub(".", "%0/"):sub(1, -2) .. ")"
   local text = " " .. question .. " " .. hint .. " "
@@ -165,12 +173,13 @@ end
 
 -- A context menu at (x, y): items {label, key}; returns the item, or nil.
 function M.menu(x, y, items)
+  local COLS, ROWS = term.cols(), term.rows()
   local w = 0
   for _, it in ipairs(items) do w = math.max(w, ui.len(it.label) + ui.len(it.key or "") + 4) end
   w = w + 2
   local h = #items + 2
   x = math.max(0, math.min(x, COLS - w))
-  y = math.max(1, math.min(y, ROWS - h))
+  y = math.max(0, math.min(y, ROWS - h))
   local sel = 1
   term.showcursor(false)
   while true do

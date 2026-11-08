@@ -2,7 +2,8 @@
 -- positions are (line, column), lines from 1, columns from 0, counted in
 -- characters. Edits go through insert() and delete(), which keep the undo
 -- history and invalidate the highlighting from the line they touch.
-local fs, hl = termina.fs, termina.hl
+local host = require "code.host"
+local fs, hl = host.fs, host.hl
 local ui = require "code.ui"
 
 local len, offset = ui.len, ui.offset

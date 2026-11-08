@@ -1,7 +1,8 @@
 -- code.lsp: what the editor knows about Lua code, without a language
 -- server: syntax errors (the compiler's), symbols (functions, locals) of a
 -- file and of the whole project, definitions, references and completion.
-local fs = termina.fs
+local host = require "code.host"
+local fs = host.fs
 local ui = require "code.ui"
 
 local M = {}
@@ -95,10 +96,7 @@ function M.forget()
   files = nil
 end
 
-local function mtime(path)
-  local lfs = require "lfs"
-  return lfs.attributes(path, "modification") or 0
-end
+local mtime = fs.mtime
 
 -- The symbols of a file on disk, cached while it does not change.
 local function fileSymbols(path)

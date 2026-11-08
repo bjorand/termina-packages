@@ -1,6 +1,7 @@
 -- code.ui: colors, text measuring and drawing helpers shared by the panes.
 -- Text is UTF-8; one character takes one cell (the screen is CP437).
-local term, key, sys = termina.term, termina.key, termina.sys
+local host = require "code.host"
+local term, key, sys = host.term, host.key, host.sys
 
 local M = {}
 

@@ -1,6 +1,7 @@
 -- code.view: draws a buffer in a rectangle of the screen (line numbers, git
 -- marks, diagnostics, selection) and turns keys and the mouse into edits.
-local term, sys = termina.term, termina.sys
+local host = require "code.host"
+local term, sys = host.term, host.sys
 local ui = require "code.ui"
 
 local M = {}
@@ -381,7 +382,10 @@ function M.mouse(b, e, r)
     end
     local l, c = M.posAt(b, r, e.x, e.y)
     local n = ui.clickCount(e)
-    if n == 2 then
+    if e.shift then  -- extends the selection (where the mouse reports Shift)
+      b:moveTo(l, c, true)
+      drag = b
+    elseif n == 2 then
       local a, z = b:wordAt(l, c)
       if a then
         b.ay, b.ax, b.cy, b.cx = l, a, l, z

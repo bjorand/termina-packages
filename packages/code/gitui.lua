@@ -1,12 +1,15 @@
--- code.gitui: the git state of the root folder, through the firmware's git
--- client (require "git.cmd"): branch, changed files, gutter marks.
--- Commit, push and pull run the git command in the terminal panel instead,
--- so that the editor stays responsive during network transfers.
+-- code.gitui: the git state of the root folder: branch, changed files,
+-- gutter marks. On Termina through the firmware's git client (git.cmd),
+-- elsewhere through the git command (code.gitcli). Commit, push and pull
+-- run the git command in the terminal panel instead, so that the editor
+-- stays responsive during network transfers.
+local host = require "code.host"
+local diff = require "code.diff"
+
 local M = {}
 
 local ok, git = pcall(require, "git.cmd")
-local diff = ok and require "git.diff"
-if not ok then git = nil end
+if not ok then git = require "code.gitcli" end
 
 local state = {
   repo = nil, branch = nil, files = {}, dirs = {},
@@ -31,7 +34,6 @@ end
 -- Opens the repository holding dir (none: the git features stay off).
 function M.open(dir)
   state.repo = nil
-  if not git then return false end
   local okk, repo = pcall(git.open, dir)
   if okk then state.repo = repo end
   return state.repo ~= nil
@@ -127,7 +129,7 @@ function M.diffText(relpath, staged)
     new = git.indextext(repo, relpath, 256 * 1024)
   else
     old = git.indextext(repo, relpath, 256 * 1024)
-    new = termina.fs.read(M.abs(relpath))
+    new = host.fs.read(M.abs(relpath))
   end
   local edits = diff.edits(old or "", new or "")
   local out = {"@ " .. relpath .. (staged and " (staged)" or "")}

@@ -1,13 +1,20 @@
 -- code.panel: the panel under the editor, with four tabs. TERMINAL runs
--- shell commands in a virtual terminal (termina.vt), PROBLEMS lists the
--- syntax errors, SEARCH the results of a search, GIT the changed files.
--- Actions for the editor come back as tables: {jump = {path, line, col}},
--- {diff = row}, {fullscreen = command}...
-local vt, fs = termina.vt, termina.fs
+-- shell commands in a virtual terminal (termina.vt, or code.pipevt off
+-- Termina), PROBLEMS lists the syntax errors, SEARCH the results of a
+-- search, GIT the changed files. Actions for the editor come back as
+-- tables: {jump = {path, line, col}}, {diff = row}, {fullscreen = command}...
+local host = require "code.host"
 local ui = require "code.ui"
 local gitui = require "code.gitui"
 
+local fs, term = host.fs, host.term
+local vt = host.vt or require "code.pipevt"
+
 local M = {}
+
+-- Called while a command runs without termina.vt, to show its output
+-- (set by the editor: it draws the screen).
+M.redraw = nil
 
 M.TABS = {"TERMINAL", "PROBLEMS", "SEARCH", "GIT"}
 
@@ -51,8 +58,9 @@ end
 local function ensureVt(r, keep)
   local w, h = vtSize(r)
   if not p.vt then
-    p.vt = vt.open(w, h)
-    p.vt:write("\27[90mCommands run here; !command runs it full screen. Ctrl+C stops one.\27[0m\n")
+    p.vt = vt.open(w, h, function() if M.redraw then M.redraw() end end)
+    p.vt:write(host.vt and "\27[90mCommands run here; !command runs it full screen. Ctrl+C stops one.\27[0m\n"
+      or "Commands run here until they end, without the keyboard; !command runs one full screen.\n")
   elseif r.h >= 3 and not keep then
     local cw, ch = p.vt:size()
     if cw ~= w or ch ~= h then p.vt:resize(w, h) end
@@ -112,6 +120,15 @@ function M.busy()
   return p.job ~= nil
 end
 
+-- Text pasted: its first line goes on the command line.
+function M.paste(text)
+  if p.tab ~= "TERMINAL" or p.job then return end
+  local t = text:gsub("\n.*", "")
+  local b = ui.offset(p.input, p.pos)
+  p.input = p.input:sub(1, b - 1) .. t .. p.input:sub(b)
+  p.pos = p.pos + ui.len(t)
+end
+
 -- Called often: follows the job. Returns true if the panel changed.
 function M.tick()
   local v = p.vt
@@ -136,12 +153,13 @@ end
 
 local helpNames  -- the commands of the shell, from "help" (read once)
 
--- Names of the commands: those of the shell, then the .lua and .sh programs
--- and the package commands along PATH (from the terminal's directory).
+-- Names of the commands: on Termina, those of the shell, then the .lua and
+-- .sh programs and the package commands along PATH (from the terminal's
+-- directory); elsewhere, the files of the PATH directories.
 local function commandNames()
   if not helpNames then
     helpNames = {}
-    local h = io.popen("help")
+    local h = host.termina and io.popen("help")
     if h then
       for line in h:lines() do
         local n = line:match("^  (%S+)")
@@ -154,7 +172,7 @@ local function commandNames()
   for _, n in ipairs(helpNames) do out[#out + 1] = n end
   for dir in ((os.getenv("PATH") or ".:/:/.pkg/bin") .. ":"):gmatch("([^:]*):") do
     local d = resolve(dir == "" and "." or dir)
-    local bin = d:match("/%.pkg/bin$")
+    local bin = d:match("/%.pkg/bin$") or not host.termina
     for _, e in ipairs(fs.dir(d) or {}) do
       local n = not e.dir and (e.name:match("^(.+)%.lua$") or e.name:match("^(.+)%.sh$") or (bin and e.name))
       if n then out[#out + 1] = n end
@@ -205,7 +223,7 @@ local function complete(v)
       new = new:sub(1, i)
     end
     if new == word then
-      local now = termina.sys.millis()
+      local now = host.sys.millis()
       if lastTab.input == p.input and now - lastTab.t < 1500 then
         local names = {}
         for _, m in ipairs(list) do names[#names + 1] = m.shown end
@@ -374,7 +392,7 @@ function M.draw(r, focused, root, resizing)
     local iy = r.y + r.h - 1
     if p.job then
       ui.put(r.x, iy, "  " .. p.job, ui.DIM, r.w)
-      if focused then termina.term.showcursor(false) end
+      if focused then term.showcursor(false) end
     else
       local pr = prompt()
       local width = r.w - #pr
@@ -382,13 +400,13 @@ function M.draw(r, focused, root, resizing)
       ui.put(r.x, iy, pr, 0x0A)
       ui.put(r.x + #pr, iy, ui.sub(p.input, start + 1, start + width), ui.TEXT, width)
       if focused then
-        termina.term.cursor(r.x + #pr + p.pos - start, iy)
-        termina.term.showcursor(true)
+        term.cursor(r.x + #pr + p.pos - start, iy)
+        term.showcursor(true)
       end
     end
     return
   end
-  if focused then termina.term.showcursor(false) end
+  if focused then term.showcursor(false) end
   local rows, sel, top
   if p.tab == "PROBLEMS" then
     p.ptop = listScroll(p.psel, p.ptop, body.h)

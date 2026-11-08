@@ -1,6 +1,7 @@
 -- code.tree: the side bar. EXPLORER, the files under the root folder (git
 -- state in color), and OUTLINE, the functions of the current Lua file.
-local fs = termina.fs
+local host = require "code.host"
+local fs = host.fs
 local ui = require "code.ui"
 
 local M = {}

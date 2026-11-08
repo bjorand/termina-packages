@@ -5,12 +5,30 @@
 -- Explorer on the left, tabs, the editor, a panel below (terminal, problems,
 -- search, git) and a status bar. The mouse selects, drags, scrolls and
 -- clicks everywhere. F1 or Ctrl+Shift+P lists every command.
-if not (termina and termina.vt) then
+--
+-- It runs on Termina (4.2.0 or later), and on any computer with Lua 5.4,
+-- luasystem and LuaFileSystem, in a terminal: lua path/to/code/code.lua.
+
+local termina = rawget(_G, "termina")
+if not termina then
+  -- Run as "lua .../code/code.lua": its modules (code.ui...) are next to it.
+  local here = (arg and arg[0] or ""):match("^(.*)/[^/]*$") or "."
+  package.path = here .. "/../?.lua;" .. package.path
+end
+if termina and not termina.vt then
   print("code needs TERMINA 4.2.0 or later")
   return
 end
-local term, key, sys, fs = termina.term, termina.key, termina.sys, termina.fs
-local system = require "system"
+for _, lib in ipairs({"system", "lfs"}) do
+  if not pcall(require, lib) then
+    print("code needs Lua 5.4 with luasystem and LuaFileSystem:")
+    print("  luarocks install luasystem")
+    print("  luarocks install luafilesystem")
+    return
+  end
+end
+local host = require "code.host"
+local term, key, sys, fs = host.term, host.key, host.sys, host.fs
 local ui = require "code.ui"
 local buffer = require "code.buffer"
 local view = require "code.view"
@@ -83,16 +101,19 @@ local function byPath()
   return t
 end
 
+-- Row 0: the tabs; the last row: the status bar.
 local function layout()
+  COLS, ROWS = term.cols(), term.rows()
+  treeW = math.max(10, math.min(treeW, COLS - 30))
   local tw = showTree and treeW or 0
   local ex = showTree and tw + 1 or 0
   local ew = COLS - ex
-  local contentH = ROWS - 3
-  local ph = showPanel and math.min(panelH, contentH - 4) or 0
-  R.tree = {x = 0, y = 1, w = tw, h = ROWS - 2}
-  R.tabs = {x = ex, y = 1, w = ew, h = 1}
-  R.editor = {x = ex, y = 2, w = ew, h = contentH - ph}
-  R.panel = {x = ex, y = 2 + contentH - ph, w = ew, h = ph}
+  local contentH = ROWS - 2
+  local ph = showPanel and math.max(3, math.min(panelH, contentH - 4)) or 0
+  R.tree = {x = 0, y = 0, w = tw, h = ROWS - 1}
+  R.tabs = {x = ex, y = 0, w = ew, h = 1}
+  R.editor = {x = ex, y = 1, w = ew, h = contentH - ph}
+  R.panel = {x = ex, y = 1 + contentH - ph, w = ew, h = ph}
   R.status = {x = 0, y = ROWS - 1, w = COLS, h = 1}
 end
 
@@ -343,34 +364,9 @@ end
 
 -- ------------------------------------------------------------------ running
 
-local origTermios = system.tcgetattr(io.stdin)
-
--- Ctrl+C and Ctrl+Z are keys for the editor, not signals.
-local function rawMode(on)
-  if not origTermios then return end
-  if on and origTermios.lflag:has_all_of(system.L_ISIG) then
-    system.tcsetattr(io.stdin, system.TCSANOW, {lflag = origTermios.lflag - system.L_ISIG})
-  else
-    system.tcsetattr(io.stdin, system.TCSANOW, origTermios)
-  end
-end
-
-local function redrawAll()
-  term.cls()
-end
-
 -- Runs a command on the whole screen, then comes back.
 local function fullscreen(cmd)
-  rawMode(false)
-  term.attr(0x07)
-  term.cls()
-  term.showcursor(true)
-  os.execute(cmd)
-  term.attr(0x07)
-  termina.write("\n\27[90m[" .. cmd .. ": done, press a key]\27[0m")
-  while not key.poll() do sys.sleep(20) end
-  rawMode(true)
-  redrawAll()
+  host.fullscreen(cmd)
   gitui.refresh()
   tree.refresh()
   reloadClean()
@@ -809,7 +805,7 @@ local function draw()
   if showTree then
     local cp = b and b.path
     tree.draw(R.tree, focus == "tree", gitui.fileState, cp)
-    ui.vline(R.tree.w, 1, ROWS - 2, dragSplit and ui.BRIGHT or ui.FRAME)
+    ui.vline(R.tree.w, 0, ROWS - 1, dragSplit and ui.BRIGHT or ui.FRAME)
   end
   drawTabs()
   if b then
@@ -888,7 +884,7 @@ local function onMouse(e)
       treeW = math.max(10, math.min(COLS - 30, e.x))
     elseif dragPanel then
       -- the header follows the pointer: the panel goes down to the status bar
-      panelH = math.max(3, math.min(ROWS - 7, ROWS - 1 - e.y))
+      panelH = math.max(3, math.min(ROWS - 6, ROWS - 1 - e.y))
     elseif dragTarget == "editor" and b then
       view.mouse(b, e, R.editor)
     elseif dragTarget == "tree" then
@@ -914,7 +910,7 @@ local function onMouse(e)
     return contextMenu(e)
   end
   local pressed = e.type == "mouse" and e.down
-  if showTree and e.x == R.tree.w and pressed and e.button == 0 and e.y >= 1 and e.y < ROWS - 1 then
+  if showTree and e.x == R.tree.w and pressed and e.button == 0 and e.y >= 0 and e.y < ROWS - 1 then
     dragSplit = true
     return
   end
@@ -1116,6 +1112,20 @@ local function onKey(e)
   end
 end
 
+-- Text pasted from the terminal (Cmd+V on a Mac): in the editor, or on the
+-- terminal's command line.
+local function onPaste(e)
+  local text = e.text:gsub("\r\n", "\n"):gsub("\r", "\n"):gsub("\t", "    ")
+  local b = current()
+  if focus == "panel" then
+    panel.paste(text)
+  elseif focus == "editor" and b and not b.readonly then
+    b:type(text, nil)
+    b.lastKind, b.want = nil, b.cx
+    lastEdit = sys.millis()
+  end
+end
+
 -- ------------------------------------------------------------------ idle work
 
 local function idle()
@@ -1173,22 +1183,32 @@ local function start()
 end
 
 local function main()
-  rawMode(true)
-  term.attr(0x07)
-  term.cls()
+  host.start()
+  if host.native then
+    term.attr(0x07)
+    term.cls()
+  end
   layout()
   start()
   draw()
+  -- a command run without termina.vt shows its output as it comes
+  panel.redraw = function()
+    draw()
+    term.flush()
+  end
   while running do
     local e = key.poll()
     local any = false
     while e do
       any = true
-      if e.type == "key" or e.type == "char" then onKey(e) else onMouse(e) end
+      if e.type == "key" or e.type == "char" then onKey(e)
+      elseif e.type == "paste" then onPaste(e)
+      else onMouse(e) end
       if not running then break end
       e = key.poll()
     end
     if not running then break end
+    if term.resized and term.resized() then any = true end
     if idle() or any then draw() end
     sys.sleep(any and 5 or 20)
   end
@@ -1203,10 +1223,12 @@ end
 
 local ok, err = xpcall(main, debug.traceback)
 panel.close()
-rawMode(false)
-term.attr(0x07)
-term.cls()
-term.showcursor(true)
+if host.native then
+  term.attr(0x07)
+  term.cls()
+  term.showcursor(true)
+end
+host.stop()
 if not ok then
   rescue()
   print("code stopped: " .. tostring(err))

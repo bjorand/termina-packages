@@ -3,6 +3,7 @@
 -- output appears as it comes, it gets no keyboard and Ctrl+C cannot stop
 -- it), and escape sequences in its output are dropped.
 local host = require "code.host"
+local lfs = require "lfs"
 
 local M = {}
 local V = {}
@@ -78,8 +79,13 @@ end
 
 -- Runs the command line until it ends; returns 1 (there is no pid).
 function V:spawn(line, cwd)
-  local nostdin = host.termina and "" or " </dev/null"  -- no keyboard for it
-  local h = io.popen("cd " .. quote(cwd or ".") .. " && (" .. line .. ") 2>&1" .. nostdin)
+  -- the whole line, its errors included, without the keyboard; Termina's
+  -- io.popen takes one command, hence sh -c there
+  local cmd = host.termina and ("sh -c " .. quote(line) .. " 2>&1") or ("(" .. line .. ") 2>&1 </dev/null")
+  local was = lfs.currentdir()
+  if cwd then lfs.chdir(cwd) end
+  local h = io.popen(cmd)
+  if cwd then lfs.chdir(was) end
   if not h then return nil, "cannot run the command" end
   self.status = nil
   local shown = host.sys.millis()

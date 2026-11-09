@@ -150,7 +150,7 @@ function M.draw(r, focused, gitstate, current)
       else
         local attr = s.kind == "function" and ui.ITEM or ui.DIM
         if i == tree.osel and focused and tree.part == "outline" then attr = ui.ITEM_SEL end
-        local icon = s.kind == "function" and ui.FUNC or "\u{2219}"
+        local icon = s.kind == "function" and ui.FUNC or "\u{25AA}"
         local label = string.rep(" ", math.min(4, s.depth // 2)) .. icon .. " " .. s.name
         ui.put(outline.x, y, label, attr, outline.w)
       end

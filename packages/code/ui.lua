@@ -1,5 +1,5 @@
 -- code.ui: colors, text measuring and drawing helpers shared by the panes.
--- Text is UTF-8; one character takes one cell (the screen is CP437).
+-- Text is UTF-8; one character takes one cell.
 local host = require "code.host"
 local term, key, sys = host.term, host.key, host.sys
 
@@ -18,6 +18,7 @@ M.TAB_ACTIVE = 0x70
 M.TAB_MODIFIED = 0x0E
 M.STATUS = 0x1F
 M.STATUS_ERR = 0x4F
+M.STATUS_SEG = 0x70         -- the branch and position segments of the status bar
 M.HEADER = 0x08
 M.HEADER_FOCUS = 0x0F
 M.FRAME = 0x08
@@ -36,7 +37,7 @@ M.POPUP_DIM = 0x78
 M.TRACK = 0x08              -- scroll bars
 M.THUMB = 0x07
 
--- Characters (CP437).
+-- Characters (Termina 6 has them all, as any terminal of a PC).
 M.VBAR = "\u{2502}"
 M.HBAR = "\u{2500}"
 M.TEE_DOWN = "\u{252C}"
@@ -44,17 +45,27 @@ M.TEE_UP = "\u{2534}"
 M.TEE_RIGHT = "\u{251C}"
 M.TEE_LEFT = "\u{2524}"
 M.CROSS = "\u{253C}"
-M.CORNER_TL, M.CORNER_TR = "\u{250C}", "\u{2510}"
-M.CORNER_BL, M.CORNER_BR = "\u{2514}", "\u{2518}"
-M.OPEN = "\u{25BC}"         -- expanded folder
-M.CLOSED = "\u{25BA}"       -- collapsed folder
-M.DOT = "\u{2022}"          -- modified file
+M.CORNER_TL, M.CORNER_TR = "\u{256D}", "\u{256E}"  -- rounded
+M.CORNER_BL, M.CORNER_BR = "\u{2570}", "\u{256F}"
+M.OPEN = "\u{25BE}"         -- expanded folder
+M.CLOSED = "\u{25B8}"       -- collapsed folder
+M.DOT = "\u{25CF}"          -- modified file
 M.FUNC = "\u{0192}"
-M.BLOCK = "\u{258C}"        -- gutter mark
-M.LOWER = "\u{2584}"        -- gutter: lines removed below
+M.BLOCK = "\u{258E}"        -- gutter mark
+M.LOWER = "\u{2581}"        -- gutter: lines removed below
+M.UPPER = "\u{2594}"        -- gutter: lines removed above
 M.UP, M.DOWN = "\u{2191}", "\u{2193}"
-M.TRACK_CH = "\u{2591}"
+M.TRACK_CH = "\u{2502}"
 M.THUMB_CH = "\u{2588}"
+M.CLOSE = "\u{2717}"        -- close box of a tab
+-- Powerline arrows: Termina's fonts have them; elsewhere only patched fonts
+-- (Nerd Fonts...) do, so CODE_POWERLINE=1 asks for them.
+local powerline = host.termina ~= nil or os.getenv("CODE_POWERLINE") ~= nil
+M.ARROW_R = powerline and "\u{E0B0}" or " "
+M.ARROW_L = powerline and "\u{E0B2}" or " "
+M.SEP = powerline and "\u{E0B3}" or "\u{2502}"
+-- Lower eighths of a block: LOWER8[n] fills the bottom n eighths of a cell.
+M.LOWER8 = {"\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}", "\u{2588}"}
 
 -- ------------------------------------------------------------------ text
 
@@ -96,11 +107,11 @@ function M.fit(s, n)
   return s .. string.rep(" ", n - w)
 end
 
--- s cut to n characters, keeping its end ("...name.lua").
+-- s cut to n characters, keeping its end ("\u{2026}name.lua").
 function M.tail(s, n)
   local w = M.len(s)
   if w <= n then return s end
-  return ".." .. M.sub(s, w - n + 3)
+  return "\u{2026}" .. M.sub(s, w - n + 2)
 end
 
 -- ------------------------------------------------------------------ drawing
@@ -140,18 +151,31 @@ end
 
 -- A vertical scroll bar of h cells at (x, y), for a view showing `visible`
 -- items out of `total`, the first one being item `first` (from 1). Without
--- anything to scroll, an empty column.
+-- anything to scroll, an empty column. The thumb moves by eighths of a
+-- cell: its top cell shows a lower eighth block, its bottom one the same
+-- with the colors swapped.
 function M.scrollbar(x, y, h, total, first, visible)
   if total <= visible then
     for i = 0, h - 1 do term.cell(x, y + i, " ", M.TEXT) end
     return
   end
-  local size = math.max(1, h * visible // total)
-  local pos = (first - 1) * (h - size) // math.max(1, total - visible)
-  pos = math.max(0, math.min(h - size, pos))
+  local h8 = h * 8
+  local size = math.max(8, h8 * visible // total)
+  local pos = (first - 1) * (h8 - size) // math.max(1, total - visible)
+  pos = math.max(0, math.min(h8 - size, pos))
+  local swapped = (M.THUMB & 0x0F) << 4 | (M.TRACK >> 4)
   for i = 0, h - 1 do
-    if i >= pos and i < pos + size then term.cell(x, y + i, M.THUMB_CH, M.THUMB)
-    else term.cell(x, y + i, M.TRACK_CH, M.TRACK) end
+    local top, bottom = i * 8, i * 8 + 8
+    local cover = math.min(bottom, pos + size) - math.max(top, pos)
+    if cover >= 8 then
+      term.cell(x, y + i, M.THUMB_CH, M.THUMB)
+    elseif cover <= 0 then
+      term.cell(x, y + i, M.TRACK_CH, M.TRACK)
+    elseif pos > top then  -- the thumb starts in this cell: its bottom part
+      term.cell(x, y + i, M.LOWER8[cover], M.THUMB)
+    else                   -- it ends here: its top part
+      term.cell(x, y + i, M.LOWER8[8 - cover], swapped)
+    end
   end
 end
 

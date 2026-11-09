@@ -63,7 +63,7 @@ function M.draw(b, r, focused, find)
       if mark == "+" then mch, mat = ui.BLOCK, ui.ADDED
       elseif mark == "~" then mch, mat = ui.BLOCK, ui.MODIFIED
       elseif mark == "-" then mch, mat = ui.LOWER, ui.DELETED end
-      if l == 1 and b.marks[0] == "-" and not mark then mch, mat = "\u{2580}", ui.DELETED end
+      if l == 1 and b.marks[0] == "-" and not mark then mch, mat = ui.UPPER, ui.DELETED end
       term.cell(r.x + gw - 2, y, mch, mat)
       term.cell(r.x + gw - 1, y, " ", ui.TEXT)
       -- text

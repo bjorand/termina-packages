@@ -509,7 +509,7 @@ local function findInFiles()
   if not default or default:find("\n") then default = find end
   local t = dialog.ask("Find in files:", default)
   if not t or t == "" then return end
-  message("Searching...")
+  message("Searching…")
   local list = searchFiles(t)
   panel.setResults(#list .. " result(s) for \"" .. t .. "\"" .. (#list >= 300 and " (first 300)" or ""), list)
   showPanel = true
@@ -681,20 +681,20 @@ local function help()
 end
 
 commands = {
-  {name = "Open file...", key = "Ctrl+P", fn = quickOpen},
-  {name = "Open path...", key = "Ctrl+O", fn = openPrompt},
-  {name = "New file...", key = "Ctrl+N", fn = function() newFile() end},
-  {name = "New folder...", key = "Ctrl+Shift+N", fn = newFolder},
+  {name = "Open file…", key = "Ctrl+P", fn = quickOpen},
+  {name = "Open path…", key = "Ctrl+O", fn = openPrompt},
+  {name = "New file…", key = "Ctrl+N", fn = function() newFile() end},
+  {name = "New folder…", key = "Ctrl+Shift+N", fn = newFolder},
   {name = "Save", key = "Ctrl+S", fn = function() save() end},
   {name = "Save all", key = "", fn = function() for _, b in ipairs(bufs) do if b:modified() then save(b) end end end},
   {name = "Close tab", key = "Ctrl+W", fn = function() close(cur) end},
-  {name = "Rename file...", key = "F2", fn = function() rename(focus == "tree" and nil or (current() and current().path)) end},
-  {name = "Delete file...", key = "", fn = function() delete() end},
-  {name = "Find...", key = "Ctrl+F", fn = findPrompt},
-  {name = "Replace...", key = "Ctrl+H", fn = replacePrompt},
-  {name = "Find in files...", key = "Ctrl+Shift+F", fn = findInFiles},
-  {name = "Go to line...", key = "Ctrl+G", fn = gotoLine},
-  {name = "Go to symbol...", key = "Ctrl+Shift+O", fn = gotoSymbol},
+  {name = "Rename file…", key = "F2", fn = function() rename(focus == "tree" and nil or (current() and current().path)) end},
+  {name = "Delete file…", key = "", fn = function() delete() end},
+  {name = "Find…", key = "Ctrl+F", fn = findPrompt},
+  {name = "Replace…", key = "Ctrl+H", fn = replacePrompt},
+  {name = "Find in files…", key = "Ctrl+Shift+F", fn = findInFiles},
+  {name = "Go to line…", key = "Ctrl+G", fn = gotoLine},
+  {name = "Go to symbol…", key = "Ctrl+Shift+O", fn = gotoSymbol},
   {name = "Go to definition", key = "F12", fn = definition},
   {name = "Find references", key = "Shift+F12", fn = references},
   {name = "Go back", key = "Alt+Left", fn = goBack},
@@ -705,7 +705,7 @@ commands = {
   {name = "Terminal", key = "", fn = function() showTab("TERMINAL") end},
   {name = "Problems", key = "Ctrl+Shift+M", fn = function() showTab("PROBLEMS") end},
   {name = "Git: changes", key = "Ctrl+Shift+G", fn = function() gitui.refresh() showTab("GIT") end},
-  {name = "Git: commit...", key = "", fn = commit},
+  {name = "Git: commit…", key = "", fn = commit},
   {name = "Git: push", key = "", fn = function() gitCommand("git push") end},
   {name = "Git: pull", key = "", fn = function() gitCommand("git pull") end},
   {name = "Git: stage all", key = "", fn = function() local ok, err = gitui.stageAll() if not ok then errorMsg(err) end end},
@@ -738,7 +738,7 @@ local function drawTabs()
     ui.put(x, r.y, " " .. b:title() .. " ", attr)
     local mx = x + ui.len(b:title()) + 2
     ui.put(mx, r.y, mark, i == cur and 0x7E or ui.TAB_MODIFIED)
-    ui.put(mx + 1, r.y, "x ", i == cur and 0x78 or ui.DIM)
+    ui.put(mx + 1, r.y, ui.CLOSE .. " ", i == cur and 0x78 or ui.DIM)
     tabs[#tabs + 1] = {i = i, x1 = x, x2 = x + w - 1, close = mx + 1}
     x = x + w
   end
@@ -766,23 +766,27 @@ local function drawWelcome(r)
   if focus == "editor" then term.showcursor(false) end
 end
 
+-- The status bar: the git branch and the position in Powerline segments,
+-- the problems and messages between them.
 local function drawStatus()
   local r = R.status
   local b = current()
-  local left = ""
+  local branch
   if gitui.available() and gitui.state.branch then
     local s, c = gitui.counts()
-    left = " \u{00B1} " .. gitui.state.branch .. (s > 0 and (" +" .. s) or "") .. (c > 0 and (" ~" .. c) or "")
+    branch = " \u{00B1} " .. gitui.state.branch .. (s > 0 and (" +" .. s) or "") .. (c > 0 and (" ~" .. c) or "") .. " "
   end
+  local left = " "
   local np = #panel.state.problems
-  if np > 0 then left = left .. "  \u{2666} " .. np .. " error" .. (np > 1 and "s" or "") end
+  if np > 0 then left = left .. "\u{2717} " .. np .. " error" .. (np > 1 and "s" or "") end
   local right = ""
   if b then
     local lang = b.lang == "lua" and "Lua" or b.lang == "sh" and "Shell" or b.lang == "diff" and "Diff" or "Text"
     local l1, c1, l2, c2 = b:selection()
     local sel = ""
     if l1 then sel = string.format(" (%d selected)", #b:get(l1, c1, l2, c2)) end
-    right = string.format("Ln %d, Col %d%s  %s%s ", b.cy, b.cx + 1, sel, lang, b.crlf and "  CRLF" or "")
+    right = string.format(" Ln %d, Col %d%s %s %s%s ", b.cy, b.cx + 1, sel, ui.SEP, lang,
+                          b.crlf and (" " .. ui.SEP .. " CRLF") or "")
   end
   local attr = ui.STATUS
   if msg and sys.millis() - msgAt < MSG_MS then
@@ -791,9 +795,21 @@ local function drawStatus()
   else
     msg = nil
   end
-  local w = COLS - ui.len(right)
-  ui.put(0, r.y, ui.fit(left, w), attr, w)
-  ui.put(w, r.y, right, ui.STATUS)
+  -- an arrow takes the segment's color on the bar's
+  local arrow = (ui.STATUS_SEG >> 4) | (attr & 0xF0)
+  local x = 0
+  if branch then
+    ui.put(0, r.y, branch, ui.STATUS_SEG)
+    x = ui.len(branch)
+    ui.put(x, r.y, ui.ARROW_R, arrow)
+    x = x + 1
+  end
+  local w = right ~= "" and COLS - ui.len(right) - 1 or COLS
+  ui.put(x, r.y, ui.fit(left, math.max(0, w - x)), attr, math.max(0, w - x))
+  if right ~= "" then
+    ui.put(w, r.y, ui.ARROW_L, arrow)
+    ui.put(w + 1, r.y, right, ui.STATUS_SEG)
+  end
 end
 
 local function draw()
@@ -837,10 +853,10 @@ local function contextMenu(e)
   local items
   if ui.inside(R.tree, e.x, e.y) and showTree then
     items = {
-      {label = "New file...", key = "^N", fn = function() newFile() end},
-      {label = "New folder...", fn = newFolder},
-      {label = "Rename...", key = "F2", fn = function() rename() end},
-      {label = "Delete...", key = "Del", fn = function() delete() end},
+      {label = "New file…", key = "^N", fn = function() newFile() end},
+      {label = "New folder…", fn = newFolder},
+      {label = "Rename…", key = "F2", fn = function() rename() end},
+      {label = "Delete…", key = "Del", fn = function() delete() end},
       {label = "Copy path", fn = function()
         local s = tree.selected()
         if s then sys.setclipboard(s.path) end

@@ -364,7 +364,7 @@ M.tabAt = tabAt
 -- resizing: the header is being dragged (it is drawn brighter).
 function M.draw(r, focused, root, resizing)
   -- header: a line between the tabs, the handle to resize the panel
-  ui.hline(r.x, r.y, r.w, resizing and ui.BRIGHT or ui.FRAME)
+  ui.hline(r.x, r.y, r.w, resizing and ui.BRIGHT or ui.FRAME, focused and "\u{2501}" or nil)
   local cx = r.x + 1
   for _, t in ipairs(M.TABS) do
     local name = label(t)
@@ -459,7 +459,9 @@ function M.draw(r, focused, root, resizing)
         text, attr = " " .. e.title, ui.HEADER_FOCUS
       else
         local kind = e.kind == "" and "untracked" or e.kind
-        text = string.format("    %-10s %s", kind, e.path)
+        local mark = e.staged and "\u{2713}" or kind == "deleted" and "\u{2717}"
+          or kind == "untracked" and "?" or "\u{25CF}"
+        text = string.format("  %s %-10s %s", mark, kind, e.path)
         attr = e.staged and ui.ADDED or (e.kind == "deleted" and ui.DELETED or ui.MODIFIED)
       end
       if i == sel then attr = focused and ui.ITEM_SEL or ui.BRIGHT end

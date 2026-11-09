@@ -148,9 +148,9 @@ local function box(title, lines)
   local x, y = (COLS - w) // 2, (ROWS - h) // 2 + 1
   for r = 0, h - 1 do
     local yy, edge = y + r, r == 0 or r == h - 1
-    scr.put(x, yy, string.rep(edge and "\u{2550}" or " ", w), BOX)
-    scr.cell(x, yy, r == 0 and 0xC9 or r == h - 1 and 0xC8 or 0xBA, BOX)
-    scr.cell(x + w - 1, yy, r == 0 and 0xBB or r == h - 1 and 0xBC or 0xBA, BOX)
+    scr.put(x, yy, string.rep(edge and "\u{2500}" or " ", w), BOX)
+    scr.cell(x, yy, r == 0 and "\u{256D}" or r == h - 1 and "\u{2570}" or "\u{2502}", BOX)
+    scr.cell(x + w - 1, yy, r == 0 and "\u{256E}" or r == h - 1 and "\u{256F}" or "\u{2502}", BOX)
   end
   put(x + (w - len(title) - 2) // 2, y, " " .. title .. " ", BOXHI)
   for k, l in ipairs(lines) do
@@ -250,7 +250,7 @@ local function stockrow(i, y)
   local bg = sel and SEL or TEXT
   local function fg(c) return sel and (0x70 | (c & 0x07)) or c end
   scr.put(0, y, string.rep(" ", LW), bg)
-  put(0, y, sel and "\u{25BA}" or " ", sel and 0x70 or DIM)
+  put(0, y, sel and "\u{25B6}" or " ", sel and 0x70 or DIM)
   put(1, y, s, sel and 0x70 or BRIGHT, 6)
   if px then
     local last = R.last[s] or px
@@ -358,32 +358,45 @@ local function chart()
   local sx = x0 + pw + 1
   if today and prev and prev >= lo and prev <= hi then
     local y = row(prev)
-    for xx = x0, x0 + pw - 1 do scr.cell(xx, y, 0xFA, DIM) end
+    for xx = x0, x0 + pw - 1 do scr.cell(xx, y, "\u{2504}", DIM) end
   end
   if cost then
     local y = row(cost)
-    for xx = x0, x0 + pw - 1 do scr.cell(xx, y, 0xFA, GOLD) end
+    for xx = x0, x0 + pw - 1 do scr.cell(xx, y, "\u{2504}", GOLD) end
     put(sx, y, "cost", GOLD)
   end
+  -- Candles in half rows: each text row holds an upper and a lower half,
+  -- wick and body drawn with the half lines and half blocks.
+  local function half(p) return (hi - p) * (2 * h - 1) // (hi - lo) end
   for k, c in ipairs(cs) do
     local xx, a = x0 + k - 1, c[4] >= c[1] and UP or DOWN
-    for y = row(c[2]), row(c[3]) do scr.cell(xx, y, 0xB3, a) end
-    local yt, yb = row(math.max(c[1], c[4])), row(math.min(c[1], c[4]))
-    if yt == yb and c[1] == c[4] then
-      scr.cell(xx, yt, 0xC4, a)
-    else
-      for y = yt, yb do scr.cell(xx, y, 0xDB, a) end
+    local wt, wb = half(c[2]), half(c[3])
+    local bt, bb = half(math.max(c[1], c[4])), half(math.min(c[1], c[4]))
+    local doji = c[1] == c[4]
+    for y = wt // 2, wb // 2 do
+      local up, down = 2 * y, 2 * y + 1
+      local w1, w2 = up >= wt and up <= wb, down >= wt and down <= wb
+      local b1, b2 = up >= bt and up <= bb, down >= bt and down <= bb
+      local ch
+      if doji and (b1 or b2) then ch = "\u{2501}"
+      elseif b1 and b2 then ch = "\u{2588}"
+      elseif b1 then ch = w2 and "\u{257F}" or "\u{2580}"
+      elseif b2 then ch = w1 and "\u{257D}" or "\u{2584}"
+      elseif w1 and w2 then ch = "\u{2502}"
+      elseif w1 then ch = "\u{2575}"
+      elseif w2 then ch = "\u{2577}" end
+      if ch then scr.cell(xx, top + y, ch, a) end
     end
   end
   put(sx, top, money(hi), DIM)
   put(sx, top + (h - 1) // 2, money((hi + lo) // 2), DIM)
   put(sx, top + h - 1, money(lo), DIM)
-  if px then put(sx - 1, row(px), "\u{25C4}" .. money(px), (not prev or px >= prev) and 0x2F or 0x4F) end
+  if px then put(sx - 1, row(px), "\u{25C0}" .. money(px), (not prev or px >= prev) and 0x2F or 0x4F) end
 end
 
 local function activity()
   local y0 = TOPB + 1
-  scr.fill(y0, 0xC4, DIM)
+  scr.fill(y0, "\u{2501}", DIM)
   put(2, y0, " ACTIVITY ", CYAN)
   for k = 1, LOG_N do
     local n = S.log[k]
@@ -400,7 +413,7 @@ local function portfolio()
   local lvl = book.level(S.b, R.px)
   local a = lvl and lvl < book.WARN and sys.millis() // 500 % 2 == 0 and ALERT or BAR
   scr.fill(y, " ", a)
-  local sep = WIDE and " \u{2502} " or "\u{2502}"
+  local sep = WIDE and " \u{E0B1} " or "\u{E0B1}"
   local bench = S.start.spy and R.px[BENCH] and (WIDE and "S&P 500 " or "S&P ") ..
                 pct(R.px[BENCH], S.start.spy) .. sep or ""
   local s = (WIDE and " Net worth " or " Worth ") .. money(eq) .. " " .. pct(eq, book.START) .. sep .. bench ..
@@ -426,10 +439,10 @@ local function draw()
   for k = 1, rows do
     if S.list[R.top + k] then stockrow(R.top + k, 2 + k) end
   end
-  if R.top > 0 then put(LW - 2, 3, "\u{25B2}", DIM) end
-  if R.top + rows < #S.list then put(LW - 2, LISTB, "\u{25BC}", DIM) end
+  if R.top > 0 then put(LW - 2, 3, "\u{25B4}", DIM) end
+  if R.top + rows < #S.list then put(LW - 2, LISTB, "\u{25BE}", DIM) end
   detail()
-  for y = 2, TOPB do scr.cell(LW, y, 0xB3, DIM) end
+  for y = 2, TOPB do scr.cell(LW, y, "\u{2502}", DIM) end
   chart()
   activity()
   portfolio()

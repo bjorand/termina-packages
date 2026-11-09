@@ -42,4 +42,6 @@ from the terminal as xterm sequences. A few things differ from Termina:
 - copy and paste use the system clipboard (`pbcopy`/`pbpaste` on a Mac,
   `wl-copy` or `xclip` on Linux), and Cmd+V pastes from the terminal;
 - most terminals send Ctrl+Shift+letter as Ctrl+letter: use F1 for those
-  commands (Ctrl+Shift+P, F, G, M, O).
+  commands (Ctrl+Shift+P, F, G, M, O);
+- the status bar draws its Powerline arrows only with `CODE_POWERLINE=1`
+  in the environment, for a font that has them (a Nerd Font, for instance).

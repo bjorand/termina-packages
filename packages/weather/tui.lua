@@ -1,4 +1,4 @@
--- weather.tui: weather, full screen at the prompt, drawn with CP437 blocks:
+-- weather.tui: weather, full screen at the prompt, drawn with blocks:
 -- a picture of the sky, the temperature in big digits, 24 hourly bars and 6
 -- days.
 -- Keys: C change city, R refresh, U °C/°F, Q or Esc quit.
@@ -130,7 +130,7 @@ local function put(x, y, s, attr) return term.put(x, y, s, attr or BG * 16 + 15)
 local function band(y, attr) term.fill(y, " ", attr) end
 
 local function rule(y, title)
-  term.fill(y, "─", BG * 16 + 8)
+  term.fill(y, "\u{2504}", BG * 16 + 8)
   put(2, y, " " .. title .. " ", BG * 16 + 7)
 end
 
@@ -149,7 +149,7 @@ local function hero(y0)
   for y = y0, y0 + 6 do band(y, sky * 16 + 15) end
   local a = sky * 16 + 15
   if not wx then
-    put(3, y0 + 3, status or "Loading...", a)
+    put(3, y0 + 3, status or "Loading\u{2026}", a)
     return
   end
   art(3, y0 + 1, wx.code, wx.night, sky)
@@ -175,7 +175,12 @@ local function hero(y0)
   end
 end
 
--- 24 bars in half-row steps, colored by temperature, labels every 3 hours.
+-- Lower eighths of a block: LOWER8[n] fills the bottom n eighths of a cell.
+local LOWER8 = {"\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}", "\u{2588}"}
+-- Left eighths: LEFT8[n] fills the left n eighths.
+local LEFT8 = {"\u{258F}", "\u{258E}", "\u{258D}", "\u{258C}", "\u{258B}", "\u{258A}", "\u{2589}", "\u{2588}"}
+
+-- 24 bars in eighths of a row, colored by temperature, labels every 3 hours.
 local function hourly(y0, h)
   rule(y0, "Next 24 hours")
   local hs = wx.hours
@@ -190,7 +195,7 @@ local function hourly(y0, h)
   local bw = math.min(3, (COLS - 4) // n)
   local left = (COLS - bw * n) // 2
   local top, bottom = y0 + 2, y0 + 1 + h  -- bar rows
-  local steps = h * 2
+  local steps = h * 8
   local levels = {}
   for i, x in ipairs(hs) do
     local level = math.max(1, round((x.temp - lo) * steps / (hi - lo)))
@@ -198,8 +203,8 @@ local function hourly(y0, h)
     local cx = left + (i - 1) * bw
     local attr = BG * 16 + tempColor(x.temp)
     for row = 0, h - 1 do
-      local filled = level - (h - 1 - row) * 2  -- half rows filled in this text row
-      local c = filled >= 2 and "█" or filled == 1 and "▄" or " "
+      local filled = level - (h - 1 - row) * 8  -- eighths filled in this text row
+      local c = filled >= 8 and LOWER8[8] or filled > 0 and LOWER8[filled] or " "
       for k = 0, bw - 2 do term.cell(cx + k, top + row, c, attr) end
       if bw == 1 then term.cell(cx, top + row, c, attr) end
     end
@@ -207,7 +212,7 @@ local function hourly(y0, h)
   -- Labels last, so that the next bars do not cover them.
   for i = 1, n, 3 do
     local cx = left + (i - 1) * bw
-    put(cx, top + h - 2 - (levels[i] - 1) // 2, deg(hs[i].temp), BG * 16 + 15)
+    put(cx, top + h - 2 - (levels[i] - 1) // 8, deg(hs[i].temp), BG * 16 + 15)
     put(cx, bottom + 1, i == 1 and "Now" or string.format("%02dh", hs[i].hour), BG * 16 + (i == 1 and 15 or 7))
   end
 end
@@ -237,13 +242,20 @@ local function daily(y0)
     local tx = x0 + (cw - (utf8.len(a) + 1 + utf8.len(b))) // 2
     tx = tx + put(tx, y, a, BG * 16 + 15) + 1
     put(tx, y, b, BG * 16 + 7)
-    -- Where the day sits between the coldest and warmest of the week.
+    -- Where the day sits between the coldest and warmest of the week, in
+    -- eighths of a cell on a dark gray track: a bar that starts inside a
+    -- cell is drawn with the colors swapped.
     local bw = cw - 3
-    local s = round((d.lo - lo) * (bw - 1) / (hi - lo))
-    local e = round((d.hi - lo) * (bw - 1) / (hi - lo))
+    local s = round((d.lo - lo) * (bw * 8 - 8) / (hi - lo))
+    local e = round((d.hi - lo) * (bw * 8 - 8) / (hi - lo)) + 8
+    local c = tempColor(d.hi)
     for k = 0, bw - 1 do
-      local on = k >= s and k <= e
-      term.cell(x0 + 1 + k, y + 1, on and "█" or "░", BG * 16 + (on and tempColor(d.hi) or 8))
+      local cover = math.min(e, k * 8 + 8) - math.max(s, k * 8)
+      local ch, a = " ", 8 * 16 + c
+      if cover >= 8 then ch = LEFT8[8]
+      elseif cover > 0 and s > k * 8 then ch, a = LEFT8[8 - cover], c * 16 + 8
+      elseif cover > 0 then ch = LEFT8[cover] end
+      term.cell(x0 + 1 + k, y + 1, ch, a)
     end
   end
 end
@@ -310,8 +322,8 @@ end
 
 local function refresh()
   if not place then return end
-  status = "Loading..."
-  if not wx then draw() else footer("Loading...") end
+  status = "Loading\u{2026}"
+  if not wx then draw() else footer("Loading\u{2026}") end
   local data, err = wd.forecast(place, fahrenheit)
   if data then
     wx, status = data, nil
@@ -326,7 +338,7 @@ end
 local function chooseCity()
   local name = ask("City: ")
   if not name or name:match("^%s*$") then footer() return false end
-  footer("Looking for " .. name .. "...")
+  footer("Looking for " .. name .. "\u{2026}")
   local p, err = wd.geocode(name)
   if not p then
     footer(err .. " (any key)")

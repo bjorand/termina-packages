@@ -1,17 +1,16 @@
--- trader: a real-time stock market game. Prices move every half second and
--- the news moves them more; buy, sell short, borrow up to twice your net
--- worth, and end 20 trading days as rich as you can without a margin call.
---   trader     title screen: new game, continue, high scores, how to play
--- Keys in a game: Up/Down (or 1-8) pick a stock, B buy, S sell or short,
--- C close the position, +/- lot size, Tab daily or intraday chart,
--- P pause, H help, Q or Esc save and leave. The game is saved at every
--- closing bell too.
+-- trader: paper trading on real US stocks. Prices come from Yahoo Finance
+-- every minute while the New York exchange is open. You start with a
+-- virtual $100,000, may sell short and hold up to twice your net worth,
+-- and race the S&P 500. The account is kept in /.trader/paper.lua.
+-- Keys: Up/Down pick a stock, B buy, S sell or short, C close the
+-- position, +/- lot size, Tab today or 3-month chart, A add a stock,
+-- D drop it, U update now, R reset the account, H help, Q or Esc quit.
 if not termina then
   print("trader needs TERMINA 4.0.0 or later")
   return
 end
 local term, key, sys, sound = termina.term, termina.key, termina.sys, termina.sound
-local market = require "trader.market"
+local quotes = require "trader.quotes"
 local book = require "trader.book"
 local save = require "trader.save"
 
@@ -21,20 +20,26 @@ if COLS < 80 or ROWS < 30 then
   return
 end
 
-local TICK_MS = 500
 local LOTS = {1, 10, 100, 1000, 0}    -- 0: the most the account allows
-local N = #market.CO
+local MAX_LIST = 16
+local OPEN_MS, CLOSED_MS = 60000, 600000  -- time between updates: market open, closed
+local BENCH = "SPY"                        -- the S&P 500 to race
+local DEFAULT = {"AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "NFLX", "AMD", "KO"}
+local NAMES = {AAPL = "Apple", MSFT = "Microsoft", NVDA = "NVIDIA", TSLA = "Tesla", AMZN = "Amazon",
+               GOOGL = "Alphabet", META = "Meta Platforms", NFLX = "Netflix", AMD = "Advanced Micro Devices",
+               KO = "Coca-Cola", SPY = "SPDR S&P 500 ETF"}
 local WIDE = COLS >= 100
 local LW = WIDE and 44 or 33          -- width of the left column
-local NEWS_N = ROWS >= 40 and 8 or 6  -- lines of news
-local TOPB = ROWS - 5 - NEWS_N        -- last row of the stocks and the chart
+local LOG_N = ROWS >= 40 and 8 or 6   -- lines of activity
+local TOPB = ROWS - 5 - LOG_N         -- last row of the stocks and the chart
+local LISTB = TOPB - 6                -- last row of the stock list
 
 local TEXT, DIM, BRIGHT, SEL, CYAN = 0x07, 0x08, 0x0F, 0x70, 0x0B
 local UP, DOWN, GOLD, BAR, ALERT = 0x0A, 0x0C, 0x0E, 0x1F, 0x4F
 local BOX, BOXHI, BOXUP, BOXDOWN = 0x1F, 0x1E, 0x1A, 0x1C
 
 -- Drawing goes to a back buffer, and flush() sends the screen only the
--- cells that changed: a frame is never seen half drawn, and a tick only
+-- cells that changed: a frame is never seen half drawn, and a refresh only
 -- costs the few cells that moved.
 local scr = {}
 do
@@ -105,6 +110,11 @@ end
 
 local function pct(a, b) return string.format("%+.1f%%", (a - b) * 100 / b) end
 
+local function dur(s)  -- seconds → "2h14" or "14 min"
+  if s >= 3600 then return string.format("%dh%02d", s // 3600, s % 3600 // 60) end
+  return string.format("%d min", (s + 59) // 60)
+end
+
 local function len(s) return utf8.len(s) or #s end
 
 local function cut(s, n)
@@ -152,56 +162,108 @@ local function box(title, lines)
 end
 
 local HELP = {
-  "Prices move every half second. A day lasts 30 seconds,",
-  "a game 20 days. You start with $10,000.",
+  "Real US stocks at their real prices (Yahoo Finance, updated",
+  "every minute), with $100,000 of play money that stays yours.",
   "",
   {"B buys and S sells the lot (+/- to change it; MAX is all", BOXHI},
-  {"you can). Selling what you don't own is a short sale:", BOXHI},
-  {"it makes money when the price falls. C closes a position.", BOXHI},
+  {"you can). Selling what you don't own is a short sale: it", BOXHI},
+  {"makes money when the price falls. C closes a position.", BOXHI},
+  "Orders fill at a fresh quote, while New York is open",
+  "(9:30 to 16:00 there, Monday to Friday). No fees.",
   "",
-  "You may hold up to 2x your net worth. Each order costs $5.",
-  "Overnight, borrowed cash costs 0.08% and shorts 0.05%.",
+  "You may hold up to 2x your net worth. Borrowed cash costs",
+  "0.02% a day, shorts 0.01% of their value.",
   {"Margin call: when net worth falls under 30% of what you", BOXDOWN},
   {"hold, your biggest positions are sold at once.", BOXDOWN},
   "",
-  "Watch the news. Rumors are often true, not always.",
-  "Score: your net worth after the closing bell of day 20.",
-  "",
-  "Up/Down or 1-8 stock, Tab chart, P pause, Q save and quit",
+  "A adds a stock (ticker symbol), D drops one, U updates now,",
+  "R starts over. Can you beat the S&P 500?",
 }
 
--- ------------------------------------------------------------- game screen
+-- ------------------------------------------------------------------- state
 
-local function titlebar(G)
-  local m = G.m
-  scr.fill(1, " ", BAR)
-  local x = put(1, 1, "TRADER", BAR | 0x0E)
-  x = put(x + 2, 1, string.format("Day %d/%d  %s ", math.min(m.day, market.DAYS), market.DAYS, market.clock(m)), BAR)
-  local bw = WIDE and 30 or 14
-  local done = m.t * bw // market.TICKS
-  x = put(x, 1, string.rep("\u{2588}", done) .. string.rep("\u{2591}", bw - done), BAR)
-  local now, prev = market.index(m)
-  put(x + 2, 1, string.format("T80 %.1f ", now), BAR)
-  put(x + 2 + #string.format("T80 %.1f ", now), 1, string.format("%+.1f%%", (now - prev) * 100 / prev),
-      (BAR & 0xF0) | (now >= prev and 0x0A or 0x0C))
-  if G.paused then rput(COLS - 2, 1, "PAUSED", BAR | 0x0E) end
+local S  -- the saved account: list, names, b, start = {t, spy}, day, log, sel, lot, chart
+local R = {px = {}, prev = {}, last = {}, intra = {}, daily = {}, next = 0, top = 0}  -- what was fetched
+
+local function fresh(list, names)
+  local l = {}
+  for i, s in ipairs(list or DEFAULT) do l[i] = s end
+  return {list = l, names = names or {}, b = book.new(), start = {}, log = {}, sel = 1, lot = 3, chart = "today"}
 end
 
-local function stockrow(G, i, y)
-  local co, s, sel = market.CO[i], G.m.stocks[i], i == G.sel
+local function name(s) return S.names[s] or NAMES[s] or s end
+
+local function find(list, s)
+  for i, x in ipairs(list) do if x == s then return i end end
+end
+
+local function now()  -- UTC seconds, nil until the clock is set from the network
+  local t = sys.epoch()
+  if t and t > 1600000000 then return t end
+end
+
+local function isopen()
+  local t = now()
+  return t and R.sess and t >= R.sess.open and t < R.sess.close or false
+end
+
+local function nyday(t) return (t + (R.sess and R.sess.off or -18000)) // 86400 end
+
+local function log(text, tone)
+  table.insert(S.log, 1, {d = os.date("%b %d %H:%M"), text = text, tone = tone or 0})
+  if #S.log > 30 then table.remove(S.log) end
+end
+
+local function say(s, a) R.msg, R.msgA = s, a or TEXT end
+
+-- ------------------------------------------------------------------ screen
+
+local function titlebar()
+  scr.fill(1, " ", BAR)
+  local x = put(1, 1, "TRADER", BAR | 0x0E)
+  local t, st = now(), nil
+  if not t then
+    st = "waiting for the clock"
+  elseif isopen() then
+    st = "New York open, closes in " .. dur(R.sess.close - t)
+  elseif R.sess and t < R.sess.open then
+    st = "New York closed, opens " .. os.date("%a %H:%M", R.sess.open)
+    if R.sess.open - t < 86400 then st = st .. " (in " .. dur(R.sess.open - t) .. ")" end
+  else
+    st = "New York closed"
+  end
+  put(x + 2, 1, st, BAR)
+  local right, a
+  if R.busy then
+    right, a = R.busy .. "\u{2026}", BAR | 0x0E
+  elseif R.err then
+    right, a = "offline: " .. R.err, (BAR & 0xF0) | 0x0C
+  else
+    right, a = "update in " .. math.max(0, (R.next - sys.millis()) // 1000) .. "s", BAR
+  end
+  rput(COLS - 2, 1, cut(right, 30), a)
+end
+
+local function stockrow(i, y)
+  local s = S.list[i]
+  local px, prev, sel = R.px[s], R.prev[s], i == S.sel
   local bg = sel and SEL or TEXT
   local function fg(c) return sel and (0x70 | (c & 0x07)) or c end
   scr.put(0, y, string.rep(" ", LW), bg)
   put(0, y, sel and "\u{25BA}" or " ", sel and 0x70 or DIM)
-  put(1, y, co.sym, sel and 0x70 or BRIGHT)
-  local pa = s.p > s.last and fg(UP) or s.p < s.last and fg(DOWN) or bg
-  rput(14, y, money(s.p), pa)
-  rput(22, y, pct(s.p, s.prev), fg(s.p >= s.prev and UP or DOWN))
-  local q = G.b.pos[i]
-  if q ~= 0 then
+  put(1, y, s, sel and 0x70 or BRIGHT, 6)
+  if px then
+    local last = R.last[s] or px
+    rput(16, y, money(px), px > last and fg(UP) or px < last and fg(DOWN) or bg)
+    if prev then rput(24, y, pct(px, prev), fg(px >= prev and UP or DOWN)) end
+  else
+    rput(16, y, "--", sel and 0x70 or DIM)
+  end
+  local q = S.b.pos[s]
+  if q then
     rput(31, y, qty(q), fg(q > 0 and CYAN or GOLD))
-    if WIDE then
-      local u = (s.p - G.b.cost[i]) * q
+    if WIDE and px then
+      local u = (px - S.b.cost[s]) * q
       rput(42, y, short(u, true), fg(u >= 0 and UP or DOWN))
     end
   else
@@ -209,82 +271,84 @@ local function stockrow(G, i, y)
   end
 end
 
-local function detail(G)
-  local i, co, s = G.sel, market.CO[G.sel], G.m.stocks[G.sel]
-  local w = LW - 2
-  local x = put(1, 12, co.name, BRIGHT, w)
-  put(x + 1, 12, market.SECTORS[co.sector], DIM, LW - x - 2)
-  local vol = co.vol < 40 and "low" or co.vol < 65 and "medium" or "high"
-  put(1, 13, string.format("Volatility %s, beta %.1f", vol, co.beta / 10), TEXT, w)
-  local q = G.b.pos[i]
-  if q == 0 then
-    put(1, 14, "No position", DIM)
+local function detail()
+  local s = S.list[S.sel]
+  if not s then return end
+  local y, w, px = TOPB - 4, LW - 2, R.px[s]
+  put(1, y, name(s), BRIGHT, w)
+  local d = R.intra[s]
+  if d and #d.c > 0 then
+    local lo, hi = d.c[1], d.c[1]
+    for _, p in ipairs(d.c) do
+      if p < lo then lo = p end
+      if p > hi then hi = p end
+    end
+    put(1, y + 1, "Day range " .. money(lo) .. " - " .. money(hi), DIM, w)
+  end
+  local q = S.b.pos[s]
+  if not q then
+    put(1, y + 2, "No position", DIM)
   else
-    put(1, 14, string.format("%s %s @ %s", q > 0 and "Long" or "Short", qty(math.abs(q)), money(G.b.cost[i])),
+    local cost = S.b.cost[s]
+    put(1, y + 2, string.format("%s %s @ %s", q > 0 and "Long" or "Short", qty(math.abs(q)), money(cost)),
         q > 0 and CYAN or GOLD, w)
-    local u = (s.p - G.b.cost[i]) * q
-    put(1, 15, "P&L " .. money(u, true) .. "  " .. pct(s.p, G.b.cost[i]), u >= 0 and UP or DOWN, w)
-  end
-  local lot = LOTS[G.lot] == 0 and "MAX" or qty(LOTS[G.lot])
-  x = put(1, 16, "Lot", TEXT)
-  x = put(x + 1, 16, " " .. lot .. " ", SEL)
-  put(x + 1, 16, string.format("max B %s S %s", qty(book.max(G.b, G.m, i, 1)), qty(book.max(G.b, G.m, i, -1))),
-      DIM, LW - x - 2)
-end
-
-local function positions(G)
-  if TOPB < 19 then return end
-  local y = 18
-  put(1, y, "Positions", CYAN)
-  for i, q in ipairs(G.b.pos) do
-    if q ~= 0 and y < TOPB then
-      y = y + 1
-      local s = G.m.stocks[i]
-      local u = (s.p - G.b.cost[i]) * q
-      put(1, y, market.CO[i].sym, TEXT)
-      rput(12, y, qty(q), q > 0 and CYAN or GOLD)
-      rput(24, y, short(u, true), u >= 0 and UP or DOWN)
+    if px then
+      local u = (px - cost) * q
+      put(1, y + 3, "P&L " .. money(u, true) .. "  " .. pct(px, cost), u >= 0 and UP or DOWN, w)
     end
   end
-  if y == 18 then put(11, y, "none", DIM) end
+  local x = put(1, y + 4, "Lot", TEXT)
+  x = put(x + 1, y + 4, " " .. (LOTS[S.lot] == 0 and "MAX" or qty(LOTS[S.lot])) .. " ", SEL)
+  if px then
+    put(x + 1, y + 4, string.format("max B %s S %s", qty(book.max(S.b, R.px, s, 1)), qty(book.max(S.b, R.px, s, -1))),
+        DIM, LW - x - 2)
+  end
 end
 
--- Candles of the selected stock: the last days, or today by groups of ticks.
-local function chart(G)
+-- Candles from closing prices, per closes in each.
+local function candles(cl, per, first)
+  local cs, prev = {}, first or cl[1]
+  for j = 1, #cl, per do
+    local o, h, l, c = prev, prev, prev, prev
+    for k = j, math.min(j + per - 1, #cl) do
+      local p = cl[k]
+      if p > h then h = p end
+      if p < l then l = p end
+      c = p
+    end
+    cs[#cs + 1] = {o, h, l, c}
+    prev = c
+  end
+  return cs
+end
+
+local function chart()
   local x0, w = LW + 2, COLS - LW - 3
-  local i, s, co = G.sel, G.m.stocks[G.sel], market.CO[G.sel]
-  local daily = G.chart == "day"
+  local s = S.list[S.sel]
+  if not s then return end
   local pw = w - 10  -- candle columns; the price scale takes the rest
-  local cs = {}
-  if daily then
-    local n = #s.days
-    for k = math.max(1, n - pw + 2), n do cs[#cs + 1] = s.days[k] end
-    cs[#cs + 1] = {s.o, s.h, s.l, s.p}
-  else
-    local t = s.ticks
-    local per = (market.TICKS + pw) // pw
-    local prev = t[1]
-    for j = 1, #t, per do
-      local o, h, l, c = prev, prev, prev, prev
-      for k = j, math.min(j + per - 1, #t) do
-        local p = t[k]
-        if p > h then h = p end
-        if p < l then l = p end
-        c = p
-      end
-      cs[#cs + 1] = {o, h, l, c}
-      prev = c
-    end
+  local today = S.chart == "today"
+  local px, prev, cs = R.px[s], R.prev[s], nil
+  if today and R.intra[s] and #R.intra[s].c > 0 then
+    cs = candles(R.intra[s].c, (78 + pw - 1) // pw, prev)  -- 78 bars of 5 minutes a day
+  elseif not today and R.daily[s] and #R.daily[s] > 1 then
+    local d, from = R.daily[s], math.max(1, #R.daily[s] - pw + 1)
+    local cl = table.move(d, from, #d, 1, {})
+    cs = candles(cl, 1, d[from - 1])
   end
-  local x = put(x0, 2, co.sym, BRIGHT)
-  put(x + 1, 2, daily and "daily, last " .. #cs .. " days (Tab: today)" or "today (Tab: daily)", DIM, x0 + w - x - 1)
+  local x = put(x0, 2, s, BRIGHT)
+  put(x + 1, 2, today and "today, 5 min (Tab: 3 months)" or "3 months (Tab: today)", DIM, x0 + w - x - 1)
+  if not cs then
+    put(x0 + 2, 4, "No data yet", DIM)
+    return
+  end
   local lo, hi = math.maxinteger, 0
   for _, c in ipairs(cs) do
     if c[2] > hi then hi = c[2] end
     if c[3] < lo then lo = c[3] end
   end
-  local cost = G.b.cost[i]
-  if G.b.pos[i] ~= 0 then
+  local cost = S.b.cost[s]
+  if cost then
     if cost > hi then hi = cost end
     if cost < lo then lo = cost end
   end
@@ -292,7 +356,11 @@ local function chart(G)
   local top, h = 3, TOPB - 2
   local function row(p) return top + (hi - p) * (h - 1) // (hi - lo) end
   local sx = x0 + pw + 1
-  if G.b.pos[i] ~= 0 then
+  if today and prev and prev >= lo and prev <= hi then
+    local y = row(prev)
+    for xx = x0, x0 + pw - 1 do scr.cell(xx, y, 0xFA, DIM) end
+  end
+  if cost then
     local y = row(cost)
     for xx = x0, x0 + pw - 1 do scr.cell(xx, y, 0xFA, GOLD) end
     put(sx, y, "cost", GOLD)
@@ -310,281 +378,270 @@ local function chart(G)
   put(sx, top, money(hi), DIM)
   put(sx, top + (h - 1) // 2, money((hi + lo) // 2), DIM)
   put(sx, top + h - 1, money(lo), DIM)
-  put(sx - 1, row(s.p), "\u{25C4}" .. money(s.p), s.p >= s.prev and 0x2F or 0x4F)
+  if px then put(sx - 1, row(px), "\u{25C4}" .. money(px), (not prev or px >= prev) and 0x2F or 0x4F) end
 end
 
-local function news(G)
+local function activity()
   local y0 = TOPB + 1
   scr.fill(y0, 0xC4, DIM)
-  put(2, y0, " NEWS ", CYAN)
-  for k = 1, NEWS_N do
-    local n = G.m.news[k]
+  put(2, y0, " ACTIVITY ", CYAN)
+  for k = 1, LOG_N do
+    local n = S.log[k]
     if n then
-      local y = y0 + k
-      if G.m.total - n.at < 6 then put(0, y, "\u{25BA}", GOLD) end
-      local x = put(1, y, string.format("D%-2d %s ", n.d, n.c), DIM)
-      put(x, y, n.text, n.tone > 0 and UP or n.tone < 0 and DOWN or GOLD, COLS - x - 1)
+      local x = put(1, y0 + k, n.d .. " ", DIM)
+      put(x, y0 + k, n.text, n.tone > 0 and UP or n.tone < 0 and DOWN or TEXT, COLS - x - 1)
     end
   end
 end
 
-local function portfolio(G)
+local function portfolio()
   local y = ROWS - 3
-  local eq = book.value(G.b, G.m)
-  local lvl = book.level(G.b, G.m)
-  local a = lvl and lvl < book.WARN and G.blink and ALERT or BAR
+  local eq = book.value(S.b, R.px)
+  local lvl = book.level(S.b, R.px)
+  local a = lvl and lvl < book.WARN and sys.millis() // 500 % 2 == 0 and ALERT or BAR
   scr.fill(y, " ", a)
-  local sep = " \u{2502} "
-  local s = " Net worth " .. money(eq) .. " " .. pct(eq, book.START) .. sep .. "Cash " .. short(G.b.cash) ..
-            sep .. (WIDE and "Buying power " or "Power ") .. short(math.max(0, book.power(G.b, G.m))) ..
+  local sep = WIDE and " \u{2502} " or "\u{2502}"
+  local bench = S.start.spy and R.px[BENCH] and (WIDE and "S&P 500 " or "S&P ") ..
+                pct(R.px[BENCH], S.start.spy) .. sep or ""
+  local s = (WIDE and " Net worth " or " Worth ") .. money(eq) .. " " .. pct(eq, book.START) .. sep .. bench ..
+            "Cash " .. short(S.b.cash) .. sep .. "Power " .. short(math.max(0, book.power(S.b, R.px))) ..
             sep .. "Margin " .. (lvl and math.min(lvl, 999) .. "%" or "-")
   put(0, y, s, a, COLS - 1)
 end
 
-local KEYS = {{"\u{2191}\u{2193}", "Pick"}, {"B", "Buy"}, {"S", "Sell"}, {"C", "Close"}, {"+-", "Lot"},
-              {"Tab", "Chart"}, {"P", "Pause"}, {"H", "Help"}, {"Q", "Quit"}}
+local KEYS = {{"\u{2191}\u{2193}", "Pick"}, {"B", "Buy"}, {"S", "Sell"}, {"C", "Close"}, {"Tab", "Chart"},
+              {"A", "Add"}, {"D", "Drop"}, {"H", "Help"}, {"Q", "Quit"}}
 
-local function draw(G)
+local function draw()
   for y = 1, ROWS - 1 do scr.fill(y, " ", TEXT) end
-  titlebar(G)
+  titlebar()
   put(1, 2, "SYM", DIM)
-  rput(14, 2, "PRICE", DIM)
-  rput(22, 2, "DAY", DIM)
+  rput(16, 2, "PRICE", DIM)
+  rput(24, 2, "DAY", DIM)
   rput(31, 2, "POS", DIM)
   if WIDE then rput(42, 2, "P&L", DIM) end
-  for i = 1, N do stockrow(G, i, 2 + i) end
-  detail(G)
-  positions(G)
+  local rows = LISTB - 2
+  if S.sel <= R.top then R.top = S.sel - 1 end
+  if S.sel > R.top + rows then R.top = S.sel - rows end
+  for k = 1, rows do
+    if S.list[R.top + k] then stockrow(R.top + k, 2 + k) end
+  end
+  if R.top > 0 then put(LW - 2, 3, "\u{25B2}", DIM) end
+  if R.top + rows < #S.list then put(LW - 2, LISTB, "\u{25BC}", DIM) end
+  detail()
   for y = 2, TOPB do scr.cell(LW, y, 0xB3, DIM) end
-  chart(G)
-  news(G)
-  portfolio(G)
-  put(1, ROWS - 2, G.msg or "", G.msgA or TEXT, COLS - 2)
+  chart()
+  activity()
+  portfolio()
+  put(1, ROWS - 2, R.msg or "", R.msgA or TEXT, COLS - 2)
   local x = 1
   for _, k in ipairs(KEYS) do
     x = put(x, ROWS - 1, k[1], BRIGHT)
     x = put(x + 1, ROWS - 1, k[2], DIM) + 2
   end
-  if G.paused then box("PAUSED", {"P or Space to go on"}) else scr.flush() end
+  scr.flush()
 end
 
--- ------------------------------------------------------------------ actions
+local function busy(text)  -- shown while a request blocks
+  R.busy = text
+  draw()
+end
 
-local function say(G, s, a) G.msg, G.msgA = s, a or TEXT end
+-- --------------------------------------------------------------- the market
 
-local function order(G, dir)
-  local i, co = G.sel, market.CO[G.sel]
-  local mx = book.max(G.b, G.m, i, dir)
-  local want = LOTS[G.lot]
+local function symbols()
+  local l = table.move(S.list, 1, #S.list, 1, {})
+  for s in pairs(S.b.pos) do
+    if not find(l, s) then l[#l + 1] = s end
+  end
+  if not find(l, BENCH) then l[#l + 1] = BENCH end
+  return l
+end
+
+-- Interest once a New York day, the margin check, the benchmark's start.
+local function settle()
+  local t = now()
+  if t and not S.start.spy and R.px[BENCH] then S.start.spy, S.start.t = R.px[BENCH], t end
+  if t and R.sess then
+    local day = nyday(t)
+    if not S.day then
+      S.day = day
+    elseif day > S.day then
+      local n, c = math.min(day - S.day, 30), 0
+      for _ = 1, n do c = c + book.night(S.b, R.px) end
+      S.day = day
+      if c > 0 then log(string.format("Interest for %d day%s: %s", n, n > 1 and "s" or "", money(-c)), -1) end
+    end
+  end
+  if isopen() then
+    local sold = book.liquidate(S.b, R.px)
+    if #sold > 0 then
+      local t2 = {}
+      for _, x in ipairs(sold) do t2[#t2 + 1] = qty(x.q) .. " " .. x.s .. " (" .. money(x.pnl, true) .. ")" end
+      local msg = "MARGIN CALL: sold " .. table.concat(t2, ", ")
+      log(msg, -1)
+      say(msg, ALERT)
+      sound.play("call:d=8,o=5,b=200:c,p,c,p,c")
+    end
+  end
+  save.store(S)
+end
+
+local function update(full)
+  busy("updating")
+  local syms = symbols()
+  local d, err = quotes.spark(syms, "1d", "5m")
+  R.err = err
+  if d then
+    for s, v in pairs(d) do
+      R.intra[s] = v
+      R.last[s] = R.px[s]
+      if #v.c > 0 then R.px[s] = v.c[#v.c] end
+      R.prev[s] = v.prev
+    end
+    local t = now()
+    if full or not R.sess or (t and t >= R.sess.close) then
+      local q = quotes.quote(BENCH)
+      if q and q.open and q.close then R.sess = {open = q.open, close = q.close, off = q.off} end
+    end
+    local day = t and nyday(t)
+    if full or R.dailyDay ~= day then
+      local h = quotes.spark(syms, "3mo", "1d")
+      if h then
+        for s, v in pairs(h) do R.daily[s] = v.c end
+        R.dailyDay = day
+      end
+    end
+  end
+  R.busy = nil
+  R.next = sys.millis() + ((isopen() or R.err) and OPEN_MS or CLOSED_MS)
+  settle()
+end
+
+-- A fresh price for s before an order, or nil (said why).
+local function fresh_price(s)
+  if not isopen() then
+    say("New York is closed: orders are taken from 9:30 to 16:00 there", DOWN)
+    sound.tone(220, 80)
+    return nil
+  end
+  busy("quote for " .. s)
+  local q, err = quotes.quote(s)
+  R.busy = nil
+  if not q or not q.price then
+    say("No quote for " .. s .. ": " .. (err or "no price"), DOWN)
+    return nil
+  end
+  R.last[s], R.px[s] = R.px[s], q.price
+  return q.price
+end
+
+local function order(dir)
+  local s = S.list[S.sel]
+  if not s then return end
+  local p = fresh_price(s)
+  if not p then return end
+  local mx = book.max(S.b, R.px, s, dir)
+  local want = LOTS[S.lot]
   local q = (want == 0 or want > mx) and mx or want
   if q <= 0 then
-    say(G, "Not enough buying power", DOWN)
+    say("Not enough buying power", DOWN)
     sound.tone(220, 80)
     return
   end
-  local old, p = G.b.pos[i], G.m.stocks[i].p
-  local pnl = book.trade(G.b, G.m, i, q * dir)
+  local old = S.b.pos[s] or 0
+  local pnl = book.trade(S.b, s, q * dir, p)
   local verb
   if dir > 0 then
     verb = old >= 0 and "Bought" or old + q <= 0 and "Covered" or "Covered and bought"
   else
     verb = old <= 0 and "Shorted" or old - q >= 0 and "Sold" or "Sold and shorted"
   end
-  local s = string.format("%s %s %s @ %s", verb, qty(q), co.sym, money(p))
-  if want ~= 0 and q < want then s = s .. " (all you could)" end
-  if pnl ~= 0 then s = s .. ", P&L " .. money(pnl, true) end
-  say(G, s, pnl > 0 and UP or pnl < 0 and DOWN or BRIGHT)
+  local msg = string.format("%s %s %s @ %s", verb, qty(q), s, money(p))
+  if want ~= 0 and q < want then msg = msg .. " (all you could)" end
+  if pnl ~= 0 then msg = msg .. ", P&L " .. money(pnl, true) end
+  local tone = pnl > 0 and 1 or pnl < 0 and -1 or 0
+  log(msg, tone)
+  say(msg, tone > 0 and UP or tone < 0 and DOWN or BRIGHT)
   sound.tone(dir > 0 and 880 or 660, 25)
+  save.store(S)
 end
 
-local function closepos(G)
-  local i, co = G.sel, market.CO[G.sel]
-  local q = G.b.pos[i]
-  if q == 0 then return say(G, "No " .. co.sym .. " position to close", DIM) end
-  local p = G.m.stocks[i].p
-  local pnl = book.trade(G.b, G.m, i, -q)
-  say(G, string.format("Closed %s %s @ %s, P&L %s", qty(math.abs(q)), co.sym, money(p), money(pnl, true)),
-      pnl >= 0 and UP or DOWN)
+local function closepos()
+  local s = S.list[S.sel]
+  local q = s and S.b.pos[s]
+  if not q then return say("No " .. (s or "") .. " position to close", DIM) end
+  local p = fresh_price(s)
+  if not p then return end
+  local pnl = book.trade(S.b, s, -q, p)
+  local msg = string.format("Closed %s %s @ %s, P&L %s", qty(math.abs(q)), s, money(p), money(pnl, true))
+  log(msg, pnl >= 0 and 1 or -1)
+  say(msg, pnl >= 0 and UP or DOWN)
   sound.tone(770, 25)
+  save.store(S)
 end
 
-local function store(G)
-  save.store({m = G.m, b = G.b, sel = G.sel, lot = G.lot, chart = G.chart, dayStart = G.dayStart})
-end
-
--- One tick → "bankrupt" when the net worth is gone.
-local function step(G)
-  for _, n in ipairs(market.tick(G.m)) do
-    if n.big then
-      sound.play(n.tone > 0 and "up:d=16,o=6,b=180:c,e,g,c7" or "down:d=8,o=4,b=160:g,e,c")
-    else
-      sound.tone(n.tone >= 0 and 1200 or 300, 40)
-    end
-  end
-  local sold = book.liquidate(G.b, G.m)
-  if #sold > 0 then
-    local t = {}
-    for _, s in ipairs(sold) do t[#t + 1] = qty(s.q) .. " " .. market.CO[s.i].sym end
-    say(G, "MARGIN CALL! Sold " .. table.concat(t, ", "), ALERT)
-    sound.play("call:d=8,o=5,b=200:c,p,c,p,c")
-  end
-  G.blink = not G.blink
-  if book.value(G.b, G.m) <= 0 then return "bankrupt" end
-end
-
--- The closing bell → "end" after the last day.
-local function dayend(G)
-  local m, b = G.m, G.b
-  local best, worst
-  for i, s in ipairs(m.stocks) do
-    local c = (s.p - s.prev) * 1000 // s.prev
-    if not best or c > best[2] then best = {i, c} end
-    if not worst or c < worst[2] then worst = {i, c} end
-  end
-  local fee = book.night(b, m)
-  local eq = book.value(b, m)
-  local day, last = m.day, m.day >= market.DAYS
-  draw(G)
-  local dp = eq + fee - G.dayStart
-  box(string.format("DAY %d CLOSED", day), {
-    {"Day P&L      " .. money(dp, true), dp >= 0 and BOXUP or BOXDOWN},
-    "Interest     " .. money(-fee),
-    {"Net worth    " .. money(eq) .. "  " .. pct(eq, book.START), BOXHI},
-    "",
-    {string.format("Top gainer   %s %+.1f%%", market.CO[best[1]].sym, best[2] / 10), BOXUP},
-    {string.format("Top loser    %s %+.1f%%", market.CO[worst[1]].sym, worst[2] / 10), BOXDOWN},
-    "",
-    last and "Any key: the final results" or string.format("Any key: day %d", day + 1),
-  })
-  sound.play("bell:d=4,o=6,b=120:c,8p,c")
-  anykey()
-  market.close(m)
-  if last then return "end" end
-  market.open(m)
-  G.dayStart = eq
-  store(G)
-  say(G, string.format("Day %d: the market is open.", m.day), CYAN)
-end
-
-local function help()
-  box("HOW TO PLAY", HELP)
-  anykey()
-end
-
--- → "end", "bankrupt" or "quit" (saved)
-local function play(G)
-  sys.saver(false)
-  local last, dirty = sys.millis(), true
-  G.paused = false
+-- A line of text typed in a box → the text, or nil when cancelled.
+local function prompt(title, help)
+  local text = ""
   while true do
-    for e in key.poll do
-      local k = e.type == "key" and e.key or e.type == "char" and e.ch:lower()
-      if k == "up" then G.sel = (G.sel - 2) % N + 1
-      elseif k == "down" then G.sel = G.sel % N + 1
-      elseif k and k:match("^[1-8]$") and tonumber(k) <= N then G.sel = tonumber(k)
-      elseif G.paused and k and k ~= "q" and k ~= "esc" then G.paused = false
-      elseif k == "b" then order(G, 1)
-      elseif k == "s" then order(G, -1)
-      elseif k == "c" then closepos(G)
-      elseif k == "+" or k == "=" or k == "right" then G.lot = math.min(#LOTS, G.lot + 1)
-      elseif k == "-" or k == "left" then G.lot = math.max(1, G.lot - 1)
-      elseif k == "tab" then G.chart = G.chart == "day" and "today" or "day"
-      elseif k == "p" or k == " " or k == "space" then G.paused = true
-      elseif k == "h" or k == "f1" then
-        draw(G)
-        help()
-        last = sys.millis()
-      elseif k == "q" or k == "esc" then
-        store(G)
-        sys.saver(true)
-        return "quit"
-      elseif e.type == "mouse" and e.down and e.x < LW and e.y >= 3 and e.y < 3 + N then
-        G.sel = e.y - 2
-      end
-      dirty = true
-    end
-    if not G.paused and sys.millis() - last >= TICK_MS then
-      last = last + TICK_MS
-      if sys.millis() - last > TICK_MS then last = sys.millis() end  -- no catching up after a stall
-      if step(G) == "bankrupt" then
-        sys.saver(true)
-        return "bankrupt"
-      end
-      if G.m.t >= market.TICKS then
-        if dayend(G) == "end" then
-          sys.saver(true)
-          return "end"
-        end
-        last = sys.millis()
-      end
-      dirty = true
-    end
-    if dirty then
-      draw(G)
-      dirty = false
-    end
-    sys.yield()
-  end
-end
-
--- --------------------------------------------------------------- the menus
-
-local function initials(score)
-  local name = ""
-  while true do
-    box("NEW HIGH SCORE", {
-      {"Net worth " .. money(score), BOXHI}, "",
-      "Your initials: " .. name .. string.rep("_", 3 - #name), "",
-      "Enter to confirm",
-    })
+    box(title, {help, "", "> " .. text .. "_", "", "Enter to confirm, Esc to cancel"})
     local e = anykey()
-    if e.type == "char" and #name < 3 and e.ch:match("^%w$") then
-      name = name .. e.ch:upper()
+    if e.type == "char" and #text < 12 and e.ch:match("^[%w%.%-%^=]$") then
+      text = text .. e.ch:upper()
     elseif e.type == "key" and e.key == "backspace" then
-      name = name:sub(1, -2)
-    elseif e.type == "key" and (e.key == "enter" or e.key == "esc") then
-      return name ~= "" and name or "???"
+      text = text:sub(1, -2)
+    elseif e.type == "key" and e.key == "enter" then
+      return text ~= "" and text or nil
+    elseif e.type == "key" and e.key == "esc" then
+      return nil
     end
   end
 end
 
-local function scores(hl)
-  local list = save.scores()
-  local lines = {}
-  if #list == 0 then lines[1] = "No scores yet: play a game!" end
-  for k, s in ipairs(list) do
-    lines[#lines + 1] = {string.format("%2d. %-3s %15s %8s", k, s.n, money(s.s), pct(s.s, book.START)),
-                         k == hl and BOXHI or BOX}
+local function add()
+  if #S.list >= MAX_LIST then return say("The list is full: drop a stock first (D)", DOWN) end
+  local s = prompt("ADD A STOCK", "Ticker symbol of a US stock or fund: IBM, SPY, BRK-B...")
+  if not s then return end
+  local i = find(S.list, s)
+  if i then
+    S.sel = i
+    return
   end
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = "Any key to go back"
-  box("HIGH SCORES", lines)
-  anykey()
+  busy("looking up " .. s)
+  local q, err = quotes.quote(s)
+  R.busy = nil
+  if not q or not q.price then return say(s .. ": " .. (err or "no price"), DOWN) end
+  if q.currency ~= "USD" then return say(s .. " is priced in " .. tostring(q.currency) .. ": US dollars only", DOWN) end
+  if q.price > 9999999 then return say(s .. " costs too much for this game", DOWN) end
+  S.list[#S.list + 1] = s
+  S.names[s] = q.name
+  S.sel = #S.list
+  R.px[s], R.prev[s] = q.price, q.prev
+  update(true)
+  say("Added " .. s .. ", " .. q.name, CYAN)
 end
 
-local function gameover(G, bankrupt)
-  local b, m = G.b, G.m
-  if not bankrupt then book.closeall(b, m) end
-  save.drop()
-  local eq = book.value(b, m)
-  draw(G)
-  box(bankrupt and "BANKRUPT" or "FINAL BELL", {
-    {"Net worth    " .. money(eq) .. "  " .. pct(eq, book.START), eq >= book.START and BOXUP or BOXDOWN},
-    "",
-    string.format("Orders       %d (fees %s)", b.trades, money(b.fees)),
-    "Interest     " .. money(b.interest),
-    {"Best trade   " .. money(b.best, true), BOXUP},
-    {"Worst trade  " .. money(b.worst, true), BOXDOWN},
-    "Margin calls " .. b.calls,
-    "",
-    bankrupt and "Your broker closed the account." or "All positions closed at the last prices.",
-  })
-  sound.play(bankrupt and "lost:d=8,o=5,b=140:g,f#,f,2e" or "won:d=8,o=6,b=160:c,e,g,2c7")
-  anykey()
-  if not bankrupt and save.qualifies(eq) then
-    local rank = save.add(initials(eq), eq)
-    draw(G)
-    scores(rank)
+local function drop()
+  local s = S.list[S.sel]
+  if not s then return end
+  if S.b.pos[s] then return say("Close your " .. s .. " position before dropping it", DOWN) end
+  table.remove(S.list, S.sel)
+  S.names[s] = nil
+  S.sel = math.max(1, math.min(S.sel, #S.list))
+  save.store(S)
+  say("Dropped " .. s)
+end
+
+local function reset()
+  box("START OVER", {"This sells everything and puts the account back", "to $100,000. The stock list stays.",
+                     "", "Y to go on, any other key to cancel"})
+  local e = anykey()
+  if e.type == "char" and e.ch:lower() == "y" then
+    S = fresh(S.list, S.names)
+    log("New account: $100,000", 0)
+    settle()
+    say("A new start. Good luck!", CYAN)
   end
 end
 
@@ -596,121 +653,88 @@ local LETTERS = {
   E = {"#####", "#    ", "#### ", "#    ", "#####"},
 }
 
-local function drawtitle(g)
+local function splash()
   for y = 1, ROWS - 1 do scr.fill(y, " ", TEXT) end
-  local y = ROWS // 2 - 9
+  local y = ROWS // 2 - 6
   for r = 1, 5 do
     local t = {}
     for ch in ("TRADER"):gmatch(".") do t[#t + 1] = LETTERS[ch][r] end
     local line = table.concat(t, " "):gsub("#", "\u{2588}")
-    put((COLS - 35) // 2, y + r, line, r <= 2 and GOLD or r == 3 and 0x06 or 0x06)
+    put((COLS - 35) // 2, y + r, line, r <= 2 and GOLD or 0x06)
   end
   local function center(yy, s, a) put((COLS - len(s)) // 2, yy, s, a) end
-  center(y + 7, "A real-time stock market game", CYAN)
-  center(y + 8, "$10,000 to start \u{00B7} 20 trading days \u{00B7} 2x leverage", DIM)
-  local items = {{"N", "New game"}}
-  if g then
-    items[#items + 1] = {"C", string.format("Continue (day %d, %s)", g.m.day, money((book.value(g.b, g.m))))}
-  end
-  items[#items + 1] = {"S", "High scores"}
-  items[#items + 1] = {"H", "How to play"}
-  items[#items + 1] = {"Q", "Quit"}
-  for k, it in ipairs(items) do
-    local x = put((COLS - 30) // 2, y + 9 + 2 * k, " " .. it[1] .. " ", SEL)
-    put(x + 2, y + 9 + 2 * k, it[2], BRIGHT)
-  end
-  local best = save.scores()[1]
-  if best then center(y + 21, "Best: " .. best.n .. " " .. money(best.s), GOLD) end
+  center(y + 7, "Paper trading on the real stock market", CYAN)
+  center(y + 9, "Fetching prices from Yahoo Finance\u{2026}", DIM)
+  scr.flush()
 end
 
--- The ticker tape at the bottom of the title screen, from a demo market.
-local function tape(demo)
-  local chars, attrs = {}, {}
-  local function add(s, a)
-    for _, c in utf8.codes(s) do
-      chars[#chars + 1], attrs[#attrs + 1] = utf8.char(c), a
-    end
-  end
-  for i, co in ipairs(market.CO) do
-    local s = demo.stocks[i]
-    local up = s.p >= s.prev
-    add(co.sym .. " ", BRIGHT)
-    add(money(s.p) .. " ", TEXT)
-    add((up and "\u{25B2}" or "\u{25BC}") .. pct(s.p, s.prev):sub(2) .. "   ", up and UP or DOWN)
-  end
-  return chars, attrs
-end
-
--- → the key picked: "n", "c", "s", "h" or "q"
-local function title(demo, g)
-  drawtitle(g)
-  local chars, attrs = tape(demo)
-  local off, tick, scroll = 0, sys.millis(), 0
-  while true do
-    for e in key.poll do
-      local k = e.type == "key" and e.key or e.type == "char" and e.ch:lower()
-      if k == "enter" then k = g and "c" or "n" end
-      if k == "esc" then k = "q" end
-      if k == "n" or k == "s" or k == "h" or k == "q" or (k == "c" and g) then return k end
-    end
-    local now = sys.millis()
-    if now - tick >= TICK_MS then
-      tick = now
-      market.tick(demo)
-      if demo.t >= market.TICKS then
-        market.close(demo)
-        market.open(demo)
-      end
-      chars, attrs = tape(demo)
-    end
-    if now - scroll >= 120 then
-      scroll = now
-      off = off + 1
-      local y = ROWS - 2
-      for x = 0, COLS - 1 do
-        local k = (off + x) % #chars + 1
-        scr.cell(x, y, chars[k], attrs[k])
-      end
-      scr.flush()
-    end
-    sys.yield()
-  end
-end
+-- -------------------------------------------------------------------- main
 
 local function main()
   term.showcursor(false)
   term.cls()
-  math.randomseed(sys.random(1000000), sys.millis())
-  local demo = market.new()
+  S = save.load()
+  if not S then
+    S = fresh()
+    log("New account: $100,000", 0)
+  end
+  splash()
+  update(true)
+  say(R.err and "No prices: " .. R.err or "H for help", R.err and DOWN or CYAN)
+  local wasopen, second = isopen(), -1
   while true do
-    local g = save.game()
-    local k = title(demo, g)
-    if k == "q" then return end
-    if k == "n" and g then
-      box("NEW GAME", {"This replaces the saved game.", "", "Y to go on, any other key to cancel"})
-      local e = anykey()
-      if not (e.type == "char" and e.ch:lower() == "y") then k = nil end
-    end
-    if k == "n" or k == "c" then
-      local G = g
-      if k == "n" then
-        G = {m = market.new(), b = book.new(N), sel = 1, lot = 3, chart = "day", dayStart = book.START}
-        say(G, "Day 1: the market is open. H for help.", CYAN)
-      else
-        say(G, string.format("Welcome back: day %d goes on.", G.m.day), CYAN)
+    local dirty = false
+    for e in key.poll do
+      local k = e.type == "key" and e.key or e.type == "char" and e.ch:lower()
+      local n = #S.list
+      if k == "up" and n > 0 then S.sel = (S.sel - 2) % n + 1
+      elseif k == "down" and n > 0 then S.sel = S.sel % n + 1
+      elseif k == "pgup" then S.sel = math.max(1, S.sel - (LISTB - 2))
+      elseif k == "pgdn" then S.sel = math.max(1, math.min(n, S.sel + (LISTB - 2)))
+      elseif k == "b" then order(1)
+      elseif k == "s" then order(-1)
+      elseif k == "c" then closepos()
+      elseif k == "+" or k == "=" or k == "right" then S.lot = math.min(#LOTS, S.lot + 1)
+      elseif k == "-" or k == "left" then S.lot = math.max(1, S.lot - 1)
+      elseif k == "tab" then S.chart = S.chart == "today" and "daily" or "today"
+      elseif k == "a" or k == "insert" then add()
+      elseif k == "d" or k == "delete" then drop()
+      elseif k == "u" then R.next = 0
+      elseif k == "r" then reset()
+      elseif k == "h" or k == "f1" then
+        box("HOW TO PLAY", HELP)
+        anykey()
+      elseif k == "q" or k == "esc" then
+        save.store(S)
+        return
+      elseif e.type == "mouse" and e.down and e.x < LW and e.y >= 3 and e.y <= LISTB then
+        local i = R.top + e.y - 2
+        if S.list[i] then S.sel = i end
       end
-      local r = play(G)
-      if r ~= "quit" then gameover(G, r == "bankrupt") end
-    elseif k == "s" then
-      scores()
-    elseif k == "h" then
-      help()
+      dirty = true
     end
+    if sys.millis() >= R.next then
+      update(false)
+      dirty = true
+    end
+    local open = isopen()
+    if open ~= wasopen then
+      wasopen = open
+      log(open and "The New York market opens" or "The New York market closes", 0)
+      sound.play("bell:d=4,o=6,b=120:c,8p,c")
+      R.next = 0  -- the opening or closing prices
+    end
+    local sec = sys.millis() // 1000
+    if sec ~= second then
+      second = sec
+      dirty = true
+    end
+    if dirty then draw() end
+    sys.yield()
   end
 end
 
 local ok, err = pcall(main)
 term.cls()
 term.showcursor(true)
-sys.saver(true)
 if not ok then error(err, 0) end

@@ -1,14 +1,57 @@
--- wifi: a network manager for the Wi-Fi of Termina, which the wifi command
--- runs. Shows the connection and the networks around, and joins one
--- without restarting; if it does not work, the network of before comes back
--- by itself.
--- Keys: Up/Down select, Enter join, R scan again, Q or Esc quit.
+-- wifi: the network manager of the Wi-Fi (TERMINA 6.3.0 and later come with it).
+--   wifi                     shows the connection and the networks around,
+--                            and joins one (keys: Up/Down select, Enter
+--                            join, R scan again, Q or Esc quit)
+--   wifi status              the connection, as text
+--   wifi <network> [password]  joins that network
+-- A network is joined without restarting, and saved for the next boots;
+-- if it does not work, the network of before comes back by itself.
 local term, key, sys = termina.term, termina.key, termina.sys
 local wifi = termina.wifi
 if not wifi then
   print("This wifi needs TERMINA 6.2.0 or later (termina.wifi).")
   return
 end
+
+-- ------------------------------------------------------- the command line
+
+local function printStatus()
+  local s = wifi.status()
+  if s.mode == "ap" then
+    print(string.format("Access point %s (password termina80), IP %s", s.ap, s.ip))
+  elseif s.connected then
+    print(string.format("Connected to \"%s\", IP %s, signal %d dBm, channel %d", s.ssid, s.ip, s.rssi, s.channel))
+  else
+    print("Wi-Fi disconnected.")
+  end
+  print("MAC " .. s.mac .. ", service termina.local:2323")
+  if s.saved ~= "" then print("Joined at boot: " .. s.saved) end
+end
+
+if arg[1] == "status" then
+  printStatus()
+  return
+elseif arg[1] then
+  local ssid, pw = arg[1], arg[2] or ""
+  termina.write("Joining \"" .. ssid .. "\"")
+  wifi.connect(ssid, pw)
+  local state
+  repeat
+    sys.sleep(1000)
+    termina.write(".")
+    state = wifi.joined()
+  until state ~= "connecting"
+  print()
+  if state == "connected" then
+    printStatus()
+  else
+    print("Could not join \"" .. ssid .. "\": back to the network of before.")
+    os.exit(1)
+  end
+  return
+end
+
+-- ------------------------------------------------------- the manager
 
 local COLS, ROWS = term.cols(), term.rows()
 local HEAD = 1 * 16 + 15          -- header and footer: white on blue

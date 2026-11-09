@@ -1,6 +1,6 @@
--- weather.tui: the terminal version of weather, for the A> prompt. Same data
--- as the desktop window, drawn with CP437 blocks: a picture of the sky, the
--- temperature in big digits, 24 hourly bars and 6 days.
+-- weather.tui: weather, full screen at the prompt, drawn with CP437 blocks:
+-- a picture of the sky, the temperature in big digits, 24 hourly bars and 6
+-- days.
 -- Keys: C change city, R refresh, U °C/°F, Q or Esc quit.
 local term, key, sys = termina.term, termina.key, termina.sys
 local wd = require "weather.data"

@@ -33,6 +33,47 @@ local TEXT, DIM, BRIGHT, SEL, CYAN = 0x07, 0x08, 0x0F, 0x70, 0x0B
 local UP, DOWN, GOLD, BAR, ALERT = 0x0A, 0x0C, 0x0E, 0x1F, 0x4F
 local BOX, BOXHI, BOXUP, BOXDOWN = 0x1F, 0x1E, 0x1A, 0x1C
 
+-- Drawing goes to a back buffer, and flush() sends the screen only the
+-- cells that changed: a frame is never seen half drawn, and a tick only
+-- costs the few cells that moved.
+local scr = {}
+do
+  local bc, ba, fc, fa = {}, {}, {}, {}  -- back and front: character, attribute
+
+  function scr.cell(x, y, ch, a)
+    if x >= 0 and x < COLS and y >= 1 and y < ROWS then
+      local k = y * COLS + x + 1
+      bc[k], ba[k] = ch, a or TEXT
+    end
+  end
+
+  function scr.put(x, y, s, a)  -- → width
+    local n = 0
+    for _, c in utf8.codes(s) do
+      scr.cell(x + n, y, utf8.char(c), a)
+      n = n + 1
+    end
+    return n
+  end
+
+  function scr.fill(y, ch, a)
+    for x = 0, COLS - 1 do scr.cell(x, y, ch or " ", a) end
+  end
+
+  function scr.flush()
+    for y = 1, ROWS - 1 do
+      for x = 0, COLS - 1 do
+        local k = y * COLS + x + 1
+        local ch, a = bc[k] or " ", ba[k] or TEXT
+        if ch ~= fc[k] or a ~= fa[k] then
+          term.cell(x, y, ch, a)
+          fc[k], fa[k] = ch, a
+        end
+      end
+    end
+  end
+end
+
 -- ---------------------------------------------------------------- formatting
 
 local function group(n)  -- 1234567 → "1,234,567"
@@ -74,11 +115,11 @@ end
 
 local function put(x, y, s, a, w)  -- → the column after the text
   if w then s = cut(s, w) end
-  return x + term.put(x, y, s, a)
+  return x + scr.put(x, y, s, a)
 end
 
 local function rput(x, y, s, a)  -- right-aligned, ending at column x
-  term.put(x - len(s) + 1, y, s, a)
+  scr.put(x - len(s) + 1, y, s, a)
 end
 
 local function anykey()
@@ -97,9 +138,9 @@ local function box(title, lines)
   local x, y = (COLS - w) // 2, (ROWS - h) // 2 + 1
   for r = 0, h - 1 do
     local yy, edge = y + r, r == 0 or r == h - 1
-    term.put(x, yy, string.rep(edge and "\u{2550}" or " ", w), BOX)
-    term.cell(x, yy, r == 0 and 0xC9 or r == h - 1 and 0xC8 or 0xBA, BOX)
-    term.cell(x + w - 1, yy, r == 0 and 0xBB or r == h - 1 and 0xBC or 0xBA, BOX)
+    scr.put(x, yy, string.rep(edge and "\u{2550}" or " ", w), BOX)
+    scr.cell(x, yy, r == 0 and 0xC9 or r == h - 1 and 0xC8 or 0xBA, BOX)
+    scr.cell(x + w - 1, yy, r == 0 and 0xBB or r == h - 1 and 0xBC or 0xBA, BOX)
   end
   put(x + (w - len(title) - 2) // 2, y, " " .. title .. " ", BOXHI)
   for k, l in ipairs(lines) do
@@ -107,6 +148,7 @@ local function box(title, lines)
     if type(l) == "table" then t, a = l[1], l[2] end
     put(x + 2, y + 1 + k, t, a, w - 4)
   end
+  scr.flush()
 end
 
 local HELP = {
@@ -132,7 +174,7 @@ local HELP = {
 
 local function titlebar(G)
   local m = G.m
-  term.fill(1, " ", BAR)
+  scr.fill(1, " ", BAR)
   local x = put(1, 1, "TRADER", BAR | 0x0E)
   x = put(x + 2, 1, string.format("Day %d/%d  %s ", math.min(m.day, market.DAYS), market.DAYS, market.clock(m)), BAR)
   local bw = WIDE and 30 or 14
@@ -149,7 +191,7 @@ local function stockrow(G, i, y)
   local co, s, sel = market.CO[i], G.m.stocks[i], i == G.sel
   local bg = sel and SEL or TEXT
   local function fg(c) return sel and (0x70 | (c & 0x07)) or c end
-  term.put(0, y, string.rep(" ", LW), bg)
+  scr.put(0, y, string.rep(" ", LW), bg)
   put(0, y, sel and "\u{25BA}" or " ", sel and 0x70 or DIM)
   put(1, y, co.sym, sel and 0x70 or BRIGHT)
   local pa = s.p > s.last and fg(UP) or s.p < s.last and fg(DOWN) or bg
@@ -252,17 +294,17 @@ local function chart(G)
   local sx = x0 + pw + 1
   if G.b.pos[i] ~= 0 then
     local y = row(cost)
-    for xx = x0, x0 + pw - 1 do term.cell(xx, y, 0xFA, GOLD) end
+    for xx = x0, x0 + pw - 1 do scr.cell(xx, y, 0xFA, GOLD) end
     put(sx, y, "cost", GOLD)
   end
   for k, c in ipairs(cs) do
     local xx, a = x0 + k - 1, c[4] >= c[1] and UP or DOWN
-    for y = row(c[2]), row(c[3]) do term.cell(xx, y, 0xB3, a) end
+    for y = row(c[2]), row(c[3]) do scr.cell(xx, y, 0xB3, a) end
     local yt, yb = row(math.max(c[1], c[4])), row(math.min(c[1], c[4]))
     if yt == yb and c[1] == c[4] then
-      term.cell(xx, yt, 0xC4, a)
+      scr.cell(xx, yt, 0xC4, a)
     else
-      for y = yt, yb do term.cell(xx, y, 0xDB, a) end
+      for y = yt, yb do scr.cell(xx, y, 0xDB, a) end
     end
   end
   put(sx, top, money(hi), DIM)
@@ -273,7 +315,7 @@ end
 
 local function news(G)
   local y0 = TOPB + 1
-  term.fill(y0, 0xC4, DIM)
+  scr.fill(y0, 0xC4, DIM)
   put(2, y0, " NEWS ", CYAN)
   for k = 1, NEWS_N do
     local n = G.m.news[k]
@@ -291,7 +333,7 @@ local function portfolio(G)
   local eq = book.value(G.b, G.m)
   local lvl = book.level(G.b, G.m)
   local a = lvl and lvl < book.WARN and G.blink and ALERT or BAR
-  term.fill(y, " ", a)
+  scr.fill(y, " ", a)
   local sep = " \u{2502} "
   local s = " Net worth " .. money(eq) .. " " .. pct(eq, book.START) .. sep .. "Cash " .. short(G.b.cash) ..
             sep .. (WIDE and "Buying power " or "Power ") .. short(math.max(0, book.power(G.b, G.m))) ..
@@ -303,7 +345,7 @@ local KEYS = {{"\u{2191}\u{2193}", "Pick"}, {"B", "Buy"}, {"S", "Sell"}, {"C", "
               {"Tab", "Chart"}, {"P", "Pause"}, {"H", "Help"}, {"Q", "Quit"}}
 
 local function draw(G)
-  for y = 1, ROWS - 1 do term.fill(y, " ", TEXT) end
+  for y = 1, ROWS - 1 do scr.fill(y, " ", TEXT) end
   titlebar(G)
   put(1, 2, "SYM", DIM)
   rput(14, 2, "PRICE", DIM)
@@ -313,7 +355,7 @@ local function draw(G)
   for i = 1, N do stockrow(G, i, 2 + i) end
   detail(G)
   positions(G)
-  for y = 2, TOPB do term.cell(LW, y, 0xB3, DIM) end
+  for y = 2, TOPB do scr.cell(LW, y, 0xB3, DIM) end
   chart(G)
   news(G)
   portfolio(G)
@@ -323,7 +365,7 @@ local function draw(G)
     x = put(x, ROWS - 1, k[1], BRIGHT)
     x = put(x + 1, ROWS - 1, k[2], DIM) + 2
   end
-  if G.paused then box("PAUSED", {"P or Space to go on"}) end
+  if G.paused then box("PAUSED", {"P or Space to go on"}) else scr.flush() end
 end
 
 -- ------------------------------------------------------------------ actions
@@ -555,7 +597,7 @@ local LETTERS = {
 }
 
 local function drawtitle(g)
-  for y = 1, ROWS - 1 do term.fill(y, " ", TEXT) end
+  for y = 1, ROWS - 1 do scr.fill(y, " ", TEXT) end
   local y = ROWS // 2 - 9
   for r = 1, 5 do
     local t = {}
@@ -627,8 +669,9 @@ local function title(demo, g)
       local y = ROWS - 2
       for x = 0, COLS - 1 do
         local k = (off + x) % #chars + 1
-        term.cell(x, y, chars[k], attrs[k])
+        scr.cell(x, y, chars[k], attrs[k])
       end
+      scr.flush()
     end
     sys.yield()
   end

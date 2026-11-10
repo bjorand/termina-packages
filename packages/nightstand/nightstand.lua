@@ -10,10 +10,12 @@ local font = require "nightstand.font"
 local sky = require "nightstand.sky"
 
 local W, H = screen:size()
--- 512x300 from Termina 7 (the 1024x600 panel, 2x2 pixels a dot), 640x480
--- before: the same picture, smaller.
+-- 300x512 from Termina 8 (the 7" panel upright): everything stacked. 512x300
+-- on Termina 7 (the 1024x600 panel, 2x2 pixels a dot), 640x480 before: the
+-- same landscape picture, smaller.
+local PORTRAIT = H > W
 local SMALL = H < 400
-font.size(SMALL and 100 or 176)
+font.size(PORTRAIT and 96 or SMALL and 100 or 176)
 sky.size(W, H)
 local REFRESH_MS, RETRY_MS = 15 * 60 * 1000, 60 * 1000
 local FRAME_MS, NIGHT_FRAME_MS = 80, 500
@@ -60,22 +62,33 @@ end
 
 -- ---------------------------------------------------------------- layout
 
-local CLOCK_Y = SMALL and 8 or 26
+local CLOCK_Y = PORTRAIT and 18 or SMALL and 8 or 26
 local DOTS_Y = CLOCK_Y + font.H + (SMALL and 10 or 16)
 local DATE_Y = DOTS_Y + (SMALL and 10 or 18)
-local PANEL_Y = SMALL and 168 or 322
--- The weather now, the next 24 hours and the sky, side by side.
-local NOW = SMALL and {x = 12, icon = 1.5, iconY = 28, tempX = 70, temp = 3, words = 60, hilo = 78, place = 98}
-              or {x = 24, icon = 2, iconY = 38, tempX = 82, temp = 4, words = 84, hilo = 104, place = 124}
-local HOURS = SMALL and {x = 186, w = 140, h = 60} or {x = 236, w = 176, h = 72}
-local SKY = SMALL and {cx = W - 82, r = 58, cy = 80, times = 90, moon = 26, moonR = 12, phase = 106}
-              or {cx = 530, r = 78, cy = 96, times = 108, moon = 34, moonR = 16, phase = 124}
+local DOT_STEP = PORTRAIT and 4 or 8
+local NOW, HOURS, SKY
+if PORTRAIT then
+  -- The date on two lines, then the weather now and the sky side by side,
+  -- and the next 24 hours across the screen at the bottom.
+  NOW = {x = 12, y = 228, icon = 1.5, iconY = 28, tempX = 64, temp = 3, words = 60, hilo = 78, place = 98,
+         room = W - 150}
+  SKY = {cx = W - 72, y = 228, r = 56, cy = 80, times = 90, moon = 26, moonR = 12, phase = 106}
+  HOURS = {x = 12, y = 366, w = W - 24, h = 80}
+else
+  -- The weather now, the next 24 hours and the sky, side by side.
+  local y = SMALL and 168 or 322
+  NOW = SMALL and {x = 12, y = y, icon = 1.5, iconY = 28, tempX = 70, temp = 3, words = 60, hilo = 78, place = 98}
+              or {x = 24, y = y, icon = 2, iconY = 38, tempX = 82, temp = 4, words = 84, hilo = 104, place = 124}
+  HOURS = SMALL and {x = 186, y = y, w = 140, h = 60} or {x = 236, y = y, w = 176, h = 72}
+  SKY = SMALL and {cx = W - 82, y = y, r = 58, cy = 80, times = 90, moon = 26, moonR = 12, phase = 106}
+              or {cx = 530, y = y, r = 78, cy = 96, times = 108, moon = 34, moonR = 16, phase = 124}
+end
 
 local function clockX(str) return (W - font.width(str)) // 2 end
 
 local function dot(sec, c)
-  local x0 = (W - 59 * 8) // 2
-  screen:circle(x0 + sec * 8 + ox, DOTS_Y + oy, 1, P(c), true)
+  local x0 = (W - 59 * DOT_STEP) // 2
+  screen:circle(x0 + sec * DOT_STEP + ox, DOTS_Y + oy, 1, P(c), true)
 end
 
 local function drawClock(hh, mm, ss)
@@ -86,6 +99,11 @@ end
 
 local function drawDate(day, month, wday)
   if not day then return end
+  if PORTRAIT then
+    center(W // 2, DATE_Y, DAYS[wday], 7, "vga", 2)
+    center(W // 2, DATE_Y + 36, day .. " " .. MONTHS[month], 7, "vga", 2)
+    return
+  end
   center(W // 2, DATE_Y, DAYS[wday] .. " " .. day .. " " .. MONTHS[month], 7, "vga", 2)
 end
 
@@ -101,7 +119,13 @@ local function drawNow(x0, y0)
   sky.icon(screen, wd.kind(wx.code), wx.night, x0 + 34 + ox, y0 + L.iconY + oy, L.icon, P)
   local t = wd.deg(wx.temp)
   text(x0 + L.tempX, y0 + 4, t, tempColor(wx.temp), "vga", L.temp)
-  text(x0, y0 + L.words, wd.words(wx.code), 15, "vga")
+  -- Long words take the small font where the sky leaves little room.
+  local words = wd.words(wx.code)
+  if L.room and textw(words, 1, "vga") > L.room then
+    text(x0, y0 + L.words + 4, words, 15)
+  else
+    text(x0, y0 + L.words, words, 15, "vga")
+  end
   local today = wx.days[1]
   if today then
     text(x0, y0 + L.hilo, "H " .. wd.deg(today.hi) .. "  L " .. wd.deg(today.lo), 7, "vga")
@@ -182,9 +206,9 @@ local function redraw(hh, mm, ss, day, month, wday)
   sky.forget()
   drawClock(hh, mm, ss)
   drawDate(day, month, wday)
-  drawNow(NOW.x, PANEL_Y)
-  drawHours(HOURS.x, PANEL_Y, HOURS.w, HOURS.h)
-  drawSky(SKY.cx, PANEL_Y, hh, mm)
+  drawNow(NOW.x, NOW.y)
+  drawHours(HOURS.x, HOURS.y, HOURS.w, HOURS.h)
+  drawSky(SKY.cx, SKY.y, hh, mm)
 end
 
 local function fetch()

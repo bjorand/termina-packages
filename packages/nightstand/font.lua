@@ -6,6 +6,15 @@ local M = {}
 M.W, M.H, M.T = 96, 176, 21  -- digit width, height, stroke (odd: round ends)
 M.SP, M.COLON = 24, 56       -- space between digits, width of ':'
 
+-- Digits h dots high, the other sizes in proportion (176 by default).
+function M.size(h)
+  M.H = h
+  M.W = h * 96 // 176
+  M.T = h * 21 // 176 | 1
+  M.SP = h * 24 // 176
+  M.COLON = h * 56 // 176
+end
+
 --   a
 -- f   b
 --   g
@@ -36,9 +45,10 @@ local function digit(s, x, y, ch, c)
   local W, H, T = M.W, M.H, M.T
   local r, half = T // 2, H // 2
   if ch == "1" then  -- one centered stroke and its slanted flag
-    local cx = x + W // 2 + 8
+    local cx = x + W // 2 + H * 8 // 176
     cap(s, cx - r, y, T, H, c)
-    for k = 0, 30, 3 do s:circle(cx - k, y + r + k * 3 // 4, r, c, true) end
+    local flag = H * 30 // 176
+    for k = 0, flag, 3 do s:circle(cx - k, y + r + k * 3 // 4, r, c, true) end
     return
   end
   local on = SEG[ch]

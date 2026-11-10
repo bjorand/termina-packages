@@ -10,6 +10,11 @@ local font = require "nightstand.font"
 local sky = require "nightstand.sky"
 
 local W, H = screen:size()
+-- 512x300 from Termina 7 (the 1024x600 panel, 2x2 pixels a dot), 640x480
+-- before: the same picture, smaller.
+local SMALL = H < 400
+font.size(SMALL and 100 or 176)
+sky.size(W, H)
 local REFRESH_MS, RETRY_MS = 15 * 60 * 1000, 60 * 1000
 local FRAME_MS, NIGHT_FRAME_MS = 80, 500
 local NIGHT_FROM, NIGHT_TO, NIGHT_INK = 22, 7, 4
@@ -55,10 +60,16 @@ end
 
 -- ---------------------------------------------------------------- layout
 
-local CLOCK_Y = 26
-local DOTS_Y = CLOCK_Y + font.H + 16
-local DATE_Y = DOTS_Y + 18
-local PANEL_Y = 322
+local CLOCK_Y = SMALL and 8 or 26
+local DOTS_Y = CLOCK_Y + font.H + (SMALL and 10 or 16)
+local DATE_Y = DOTS_Y + (SMALL and 10 or 18)
+local PANEL_Y = SMALL and 168 or 322
+-- The weather now, the next 24 hours and the sky, side by side.
+local NOW = SMALL and {x = 12, icon = 1.5, iconY = 28, tempX = 70, temp = 3, words = 60, hilo = 78, place = 98}
+              or {x = 24, icon = 2, iconY = 38, tempX = 82, temp = 4, words = 84, hilo = 104, place = 124}
+local HOURS = SMALL and {x = 186, w = 140, h = 60} or {x = 236, w = 176, h = 72}
+local SKY = SMALL and {cx = W - 82, r = 58, cy = 80, times = 90, moon = 26, moonR = 12, phase = 106}
+              or {cx = 530, r = 78, cy = 96, times = 108, moon = 34, moonR = 16, phase = 124}
 
 local function clockX(str) return (W - font.width(str)) // 2 end
 
@@ -80,21 +91,22 @@ end
 
 -- Bottom left: the weather now.
 local function drawNow(x0, y0)
+  local L = NOW
   if not wx then
-    text(x0, y0 + 30, wxErr and "No weather" or "Weather...", 8, "vga", 2)
-    if wxErr then text(x0, y0 + 70, wxErr, 8) end
-    text(x0, y0 + 122, place.name, 8)
+    text(x0, y0 + L.words - 54, wxErr and "No weather" or "Weather...", 8, "vga", 2)
+    if wxErr then text(x0, y0 + L.words - 14, wxErr, 8) end
+    text(x0, y0 + L.place - 2, place.name, 8)
     return
   end
-  sky.icon(screen, wd.kind(wx.code), wx.night, x0 + 34 + ox, y0 + 38 + oy, 2, P)
+  sky.icon(screen, wd.kind(wx.code), wx.night, x0 + 34 + ox, y0 + L.iconY + oy, L.icon, P)
   local t = wd.deg(wx.temp)
-  text(x0 + 82, y0 + 4, t, tempColor(wx.temp), "vga", 4)
-  text(x0, y0 + 84, wd.words(wx.code), 15, "vga")
+  text(x0 + L.tempX, y0 + 4, t, tempColor(wx.temp), "vga", L.temp)
+  text(x0, y0 + L.words, wd.words(wx.code), 15, "vga")
   local today = wx.days[1]
   if today then
-    text(x0, y0 + 104, "H " .. wd.deg(today.hi) .. "  L " .. wd.deg(today.lo), 7, "vga")
+    text(x0, y0 + L.hilo, "H " .. wd.deg(today.hi) .. "  L " .. wd.deg(today.lo), 7, "vga")
   end
-  text(x0, y0 + 124, place.name, 8)
+  text(x0, y0 + L.place, place.name, 8)
 end
 
 -- Bottom middle: the temperature over the next 24 hours.
@@ -130,7 +142,7 @@ end
 
 -- Bottom right: the sun's course, or the moon's at night, and its phase.
 local function drawSky(cx, y0, hh, mm)
-  local R, cy = 78, y0 + 96
+  local R, cy = SKY.r, y0 + SKY.cy
   local today = wx and wx.days[1]
   local now = hh and hh * 60 + mm
   local up, f
@@ -142,7 +154,7 @@ local function drawSky(cx, y0, hh, mm)
       up = "moon"
       f = ((now - set) % 1440) / ((rise - set) % 1440)
     end
-    center(cx, y0 + 108, "\24 " .. today.rise:sub(12, 16) .. "   \25 " .. today.set:sub(12, 16), 7)
+    center(cx, y0 + SKY.times,"\24 " .. today.rise:sub(12, 16) .. "   \25 " .. today.set:sub(12, 16), 7)
   end
   local utc = sys.epoch()
   local age = utc and sky.moonAge(utc)
@@ -160,8 +172,8 @@ local function drawSky(cx, y0, hh, mm)
     end
   end
   if age then
-    moon(cx + ox, cy - 34 + oy, 16, 7)
-    center(cx, y0 + 124, sky.phaseName(age), 8)
+    moon(cx + ox, cy - SKY.moon + oy, SKY.moonR, 7)
+    center(cx, y0 + SKY.phase, sky.phaseName(age), 8)
   end
 end
 
@@ -170,9 +182,9 @@ local function redraw(hh, mm, ss, day, month, wday)
   sky.forget()
   drawClock(hh, mm, ss)
   drawDate(day, month, wday)
-  drawNow(24, PANEL_Y)
-  drawHours(236, PANEL_Y, 176, 72)
-  drawSky(530, PANEL_Y, hh, mm)
+  drawNow(NOW.x, PANEL_Y)
+  drawHours(HOURS.x, PANEL_Y, HOURS.w, HOURS.h)
+  drawSky(SKY.cx, PANEL_Y, hh, mm)
 end
 
 local function fetch()

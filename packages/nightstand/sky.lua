@@ -118,7 +118,7 @@ M.sun, M.moon = sun, moon
 
 -- ------------------------------------------------------------- particles
 
-local W, H = 640, 480
+local W, H = 640, 480  -- the screen's, from M.size()
 local drawn, nd = {}, 0  -- x, y, color of each dot put by the last frame
 local parts, kind, t = {}, nil, 0
 
@@ -140,6 +140,9 @@ end
 
 -- After a full redraw (cls): nothing of the last frame is left to erase.
 function M.forget() nd = 0 end
+
+-- Where the particles fall: the screen's size.
+function M.size(w, h) W, H = w, h end
 
 local SETUP = {
   rain = function() return 46 end, storm = function() return 54 end,
@@ -187,8 +190,8 @@ function M.step(s)
       streak(s, p, fast and 8 or 3, fast and 9 or 11)
     end
     if kind == "storm" and t % 90 < 2 then  -- a flash now and then
-      local x, y = 80 + (t * 37) % 480, 0
-      while y < 200 do
+      local x, y = W // 8 + (t * 37) % (W * 3 // 4), 0
+      while y < H * 2 // 5 do
         local nx, ny = x + random(-14, 14), y + random(12, 24)
         local n = math.max(math.abs(nx - x), ny - y)
         for i = 0, n do put(s, I(x + (nx - x) * i / n), I(y + (ny - y) * i / n), 14) end

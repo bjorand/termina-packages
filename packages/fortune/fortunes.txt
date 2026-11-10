@@ -1,0 +1,122 @@
+Real programmers count from zero.
+%
+There are 10 kinds of people: those who read binary and those who don't.
+%
+64K ought to be enough for this saying.
+%
+The cursor blinks. It is waiting for you, not the other way around.
+%
+A byte walks into a bar and orders a nibble. The bartender says:
+"Sorry, we only serve whole words here."
+%
+To err is human. To really foul things up takes a stack overflow.
+%
+Every program has at least one bug and can be shortened by one line.
+Therefore every program can be reduced to one line that does not work.
+%
+Save early, save often. The power cord has no undo.
+%
+The best way to predict the future is to POKE it.
+%
+In the beginning was the command line.
+%
+Your lucky numbers are 0x00, 0x7F and 0xFF.
+%
+Nostalgia is just RAM that never got cleared.
+%
+It works on my machine. And this is your machine now.
+%
+A clean desk is a sign of an empty buffer.
+%
+There is no place like 127.0.0.1.
+%
+Today is a good day to read the manual. Tomorrow too.
+%
+Patience is a terminal at 300 baud.
+%
+Weeks of coding can save you hours of planning.
+%
+GOTO considered harmful. GOSUB considered mildly annoying.
+%
+The machine does exactly what you tell it to.
+That is the whole problem.
+%
+Any sufficiently old technology is indistinguishable from fun.
+%
+You will meet a tall, dark stranger. It will be a segmentation fault.
+%
+Eight bits were enough to land on the Moon.
+What will you do with yours?
+%
+READY.
+%
+Keep calm and press RETURN.
+%
+Debugging is twice as hard as writing the code.
+So write it half as clever, and you will finish on time.
+%
+Every keyboard has a key labeled ANY. Nobody has ever found it.
+%
+Comments are love letters to your future self.
+%
+A program is never finished, only released.
+%
+The fastest code is the code that never runs.
+%
+The phosphor remembers what you typed, a little longer than you do.
+%
+You have new mail. Just kidding, this is a microcomputer.
+%
+Two things are infinite: the universe and a loop without an exit.
+%
+Off by one? It happens to the two of us.
+%
+Fortune favors the backed up.
+%
+Some days you are the pixel, some days you are the sprite.
+%
+The oldest bug is the one you already fixed, twice.
+%
+Hardware is the part you can kick.
+%
+When in doubt, reboot. When certain, reboot anyway.
+%
+Interrupts happen. Return from them gracefully.
+%
+Your code compiles. Do not ask it any more questions today.
+%
+Life is short. Use short variable names. Then regret it.
+%
+The registers are full, the stack is deep, the night is young.
+%
+A watched progress bar never fills.
+%
+Behind every great program is a pile of print statements.
+%
+Do one thing, and do it in 4 kilobytes.
+%
+Somewhere, a semicolon is missing. It misses you too.
+%
+Silicon dreams are made of sand and caffeine.
+%
+Yesterday's hack is today's feature and tomorrow's legacy.
+%
+Type HELP. Everybody needs it sometimes.
+%
+An expert is someone who has made every mistake on a smaller machine.
+%
+Insert coin to continue. Or just press any key.
+%
+The answer is 42, but the question was in hexadecimal.
+%
+Blessed are the curious, for they shall open the case.
+%
+A good error message is a gift. A cryptic one is a riddle.
+%
+Your screen saver misses you.
+%
+Free memory is like free time: it is gone before you notice.
+%
+Measure twice, flash once.
+%
+Every great machine started as a blinking LED.

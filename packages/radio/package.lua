@@ -1,9 +1,9 @@
--- radio: Termina FM, endless lofi composed on the fly, played by the sound card.
+-- radio: Termina FM, endless music composed on the fly, played by the sound card.
 return {
   name = "radio",
-  version = "1.1.0",
-  description = "Termina FM: endless lofi radio composed on the fly, played by the ATtiny85 sound card (TERMINA 8.5.0)",
+  version = "1.2.0",
+  description = "Termina FM: endless lofi and synthwave stations composed on the fly for the sound card (TERMINA 8.5.0)",
   author = "bjorand",
   license = "MIT",
-  bin = { "radio" },   -- "radio [-q] [host[:port]]" at the prompt
+  bin = { "radio" },   -- "radio [-q] [-s station] [host[:port]]" at the prompt
 }

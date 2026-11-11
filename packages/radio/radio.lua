@@ -3,10 +3,13 @@
 -- 4-voice synthesizer. The server sends notes, not audio: every Termina tuned
 -- in plays the same song at the same time.
 --
---   radio [host[:port]]      full screen; the host is remembered
---   radio -q [host[:port]]   no screen, for the background: radio -q &
+--   radio [-s station] [host[:port]]   full screen; host and station are
+--                                      remembered
+--   radio -q [-s station] [host]       no screen, for the background:
+--                                      radio -q &
 --
--- Keys: + and - set the volume, M mutes, Esc or Q quits.
+-- Keys: Left/Right or 1-9 change stations (lofi, synthwave...), + and - set
+-- the volume, M mutes, Esc or Q quits.
 --
 -- The SIGNAL panel tells why the music cuts out: the buffer is how far ahead
 -- of the music the notes received go (the server sends them a few seconds
@@ -31,16 +34,25 @@ local WINDOW_MS = 10000    -- the minimum / maximum stats cover this long
 local args = {...}
 if #args == 0 and arg then args = {table.unpack(arg)} end -- run/lua give them in arg
 local quiet = false
-local target
-for _, a in ipairs(args) do
+local target, wanted
+local i = 1
+while i <= #args do
+  local a = args[i]
   if a == "-q" then quiet = true
+  elseif a == "-s" then
+    i = i + 1
+    wanted = args[i]
   elseif a == "-h" or a == "--help" then
-    print("usage: radio [-q] [host[:port]]")
-    print("  -q  no screen: play in the background (radio -q &)")
+    print("usage: radio [-q] [-s station] [host[:port]]")
+    print("  -q          no screen: play in the background (radio -q &)")
+    print("  -s station  the station to tune to (lofi, synthwave...)")
     return
   else target = a end
+  i = i + 1
 end
 if target then store.set("radio_host", target) end
+if wanted then store.set("radio_station", wanted) end
+wanted = wanted or store.get("radio_station")
 target = target or store.get("radio_host") or DEFAULT_HOST
 local host, port = target:match("^(.-):(%d+)$")
 host = host or target
@@ -53,6 +65,9 @@ local WAVES = {pulse = true, triangle = true, saw = true, noise = true}
 -- ------------------------------------------------------------- state
 
 local station = "Termina FM"
+local stations = {}        -- {id, listeners, name}, from STATION lines
+local tuned = nil          -- id of the station playing (nil: an old server)
+local tuning = nil         -- id asked with TUNE, until its TUNED comes
 local track = nil          -- {title, key, bpm, t}
 local listeners = 0
 local status = "Tuning in to " .. host .. "..."
@@ -64,6 +79,7 @@ local vol = {}             -- the volume each voice was last set to
 local meter = {}           -- [v] = {start, ms, vol, label}
 local master = tonumber(store.get("radio_volume")) or 12
 local muted = false
+local sock = nil           -- the connection to the server
 
 -- Signal stats. *Now are being measured over the current window; the others
 -- are the last full window's, shown on screen.
@@ -138,11 +154,62 @@ local function push(e)
   if not lastT or e.t > lastT then lastT = e.t end
 end
 
+-- Everything of the station playing is dropped: the queue, the clock, the
+-- song, the sounding notes.
+local function resetPlayback()
+  queue, qhead, qtail, lastT = {}, 1, 0, nil
+  offset, syncMin = nil, nil
+  track, meter = nil, {}
+  vol = {}
+  if card then pcall(synth.off) end
+end
+
+local function send(line)
+  if sock then pcall(sock.send, sock, line .. "\n") end
+end
+
+local function stationIndex(id)
+  for i, s in ipairs(stations) do
+    if s.id == id then return i end
+  end
+end
+
+local function tune(id)
+  if not id or id == (tuning or tuned) or not stationIndex(id) then return end
+  tuning = id
+  resetPlayback()
+  status = "Tuning to " .. stations[stationIndex(id)].name .. "..."
+  send("TUNE " .. id)
+  wanted = id
+  store.set("radio_station", id)
+end
+
 local function parse(line)
   local w = {}
   for f in line:gmatch("%S+") do w[#w + 1] = f end
   local k = w[1]
-  if k == "N" then
+  -- Between our TUNE and its TUNED, the old station's last lines: dropped.
+  if tuning and (k == "N" or k == "PATCH" or k == "TRACK" or k == "NOW" or k == "L") then return end
+  if k == "STATION" then
+    local id, n, name = line:match("^STATION (%S+) (%d+) (.*)$")
+    if id then
+      local i = stationIndex(id) or #stations + 1
+      stations[i] = {id = id, listeners = tonumber(n), name = name}
+      if id == tuned then listeners = tonumber(n) end
+    end
+  elseif k == "TUNED" then
+    tuned, tuning = w[2], nil
+    resetPlayback()
+    status = nil
+    if quiet then
+      local i = stationIndex(tuned)
+      print("radio: tuned to " .. (i and stations[i].name or tuned))
+    end
+    -- Every connection starts on the default station: go to ours.
+    if wanted and wanted ~= tuned and stationIndex(wanted) then tune(wanted) end
+  elseif k == "ERR" then
+    status = line:sub(5)
+  elseif k == "N" then
     push({kind = "N", t = tonumber(w[2]), v = tonumber(w[3]),
       hz = tonumber(w[4]), ms = tonumber(w[5]), vol = tonumber(w[6])})
   elseif k == "PATCH" then
@@ -157,6 +224,7 @@ local function parse(line)
   elseif k == "L" then
     listeners = tonumber(w[2]) or listeners
   elseif k == "TRADIO" then
+    stations = {}
     if w[2] ~= "1" then status = "Unknown protocol version " .. tostring(w[2]) .. ": update radio" end
     station = line:match("^TRADIO %S+ (.*)$") or station
   end
@@ -206,15 +274,14 @@ end
 
 -- ---------------------------------------------------------- connection
 
-local sock, buf, lastData, retryAt = nil, "", 0, 0
+local buf, lastData, retryAt = "", 0, 0
 
 local function disconnect(why)
   if sock then pcall(sock.close, sock) end
   sock = nil
   buf = ""
-  queue, qhead, qtail, lastT = {}, 1, 0, nil
-  offset, syncMin = nil, nil
-  if card then pcall(synth.off) end
+  resetPlayback()
+  tuned, tuning = nil, nil
   st.reconnects = st.reconnects + 1
   status = why .. " - retrying in " .. RETRY_MS // 1000 .. " s"
   if quiet then print("radio: " .. status) end
@@ -305,9 +372,17 @@ end
 
 local function secs(ms) return string.format("%.1f s", (ms or 0) / 1000) end
 
+-- "Eb" -> "Eb major", "Am" -> "A minor".
+local function keyLabel(k)
+  local root = k:match("^(.-)m$")
+  return root and root .. " minor" or k .. " major"
+end
+
 local function draw()
   scr.clear()
-  local head = " " .. station:upper() .. "  " .. host .. (port ~= DEFAULT_PORT and ":" .. port or "")
+  local si = tuned and stationIndex(tuned)
+  local name = station:upper() .. (si and "  \u{00B7}  " .. stations[si].name:upper() or "")
+  local head = " " .. name .. "  " .. host .. (port ~= DEFAULT_PORT and ":" .. port or "")
   scr.put(0, 1, head .. string.rep(" ", math.max(0, COLS - utf8.len(head))), TITLE)
 
   local y = 3
@@ -315,7 +390,7 @@ local function draw()
     scr.put(2, y, track.title, BRIGHT)
     local now = airNow()
     local el = now and math.max(0, now - track.t) // 1000 or 0
-    scr.put(2, y + 1, string.format("%s major  %d bpm  %d:%02d", track.key, track.bpm, el // 60, el % 60), DIM)
+    scr.put(2, y + 1, string.format("%s  %d bpm  %d:%02d", keyLabel(track.key), track.bpm, el // 60, el % 60), DIM)
   else
     scr.put(2, y, "...", DIM)
   end
@@ -343,6 +418,19 @@ local function draw()
   scr.put(10, y, muted and "muted" or string.format("%2d/15", master), muted and WARN or HEAD)
   scr.put(19, y, bar(muted and 0 or math.floor(master * width / 15 + 0.5), width), muted and DIM or BAR)
 
+  -- Stations: the one playing marked, its number to pick it.
+  if #stations > 1 then
+    y = y + 2
+    scr.put(2, y, "STATIONS", HEAD)
+    for n, s in ipairs(stations) do
+      y = y + 1
+      local on = s.id == (tuning or tuned)
+      scr.put(2, y, (on and "\u{25B6} " or "  ") .. n, on and HEAD or DIM)
+      scr.put(6, y, s.name, on and BRIGHT or TEXT)
+      scr.put(19, y, string.format("%d listening", s.listeners), DIM)
+    end
+  end
+
   -- Signal: the buffer bar spans 0..4 s; under 0.5 s it turns red.
   y = y + 2
   scr.put(2, y, "SIGNAL", HEAD)
@@ -366,15 +454,28 @@ local function draw()
     y = y + 1
   end
   if status then scr.put(2, y, status, WARN) end
-  scr.put(2, ROWS - 2, "+/- volume  M mute  Esc quit", DIM)
+  scr.put(2, ROWS - 2, #stations > 1 and "\u{2190}/\u{2192} or 1-9 station  +/- volume  M mute  Esc quit"
+    or "+/- volume  M mute  Esc quit", DIM)
   scr.flush()
 end
 
 -- ---------------------------------------------------------------- main
 
+-- Tunes dir stations away from the one playing, in the list's order.
+local function step(dir)
+  if #stations < 2 then return end
+  local i = stationIndex(tuning or tuned) or 1
+  tune(stations[(i - 1 + dir) % #stations + 1].id)
+end
+
 local function onKey(e)
   if e.type == "char" then
     local c = e.ch:lower()
+    local n = tonumber(c)
+    if n and stations[n] then
+      tune(stations[n].id)
+      return
+    end
     if c == "q" then return "quit"
     elseif c == "+" or c == "=" then master, muted = math.min(15, master + 1), false
     elseif c == "-" then master, muted = math.max(0, master - 1), false
@@ -384,6 +485,8 @@ local function onKey(e)
     setMaster()
   elseif e.type == "key" then
     if e.key == "esc" then return "quit"
+    elseif e.key == "left" then step(-1) return
+    elseif e.key == "right" then step(1) return
     elseif e.key == "up" then master, muted = math.min(15, master + 1), false
     elseif e.key == "down" then master, muted = math.max(0, master - 1), false
     else return end
@@ -401,7 +504,7 @@ local function main()
   end
   connect()
   if quiet and status then print(status) end
-  local lastDraw, lastLoop, lastLate = 0, sys.millis(), 0
+  local lastDraw, lastLoop, lastLate, lastList = 0, sys.millis(), 0, sys.millis()
   st.windowStart = lastLoop
   while true do
     pump()
@@ -415,6 +518,10 @@ local function main()
     st.loopMaxNow = math.max(st.loopMaxNow, now - lastLoop)
     lastLoop = now
     rollStats(now)
+    if not quiet and sock and #stations > 1 and now - lastList >= 10000 then
+      lastList = now
+      send("LIST") -- fresh listener counts
+    end
     if not quiet and now - lastDraw >= 80 then
       lastDraw = now
       draw()

@@ -30,6 +30,7 @@ local LATE = 250           -- a note this late is skipped
 local RETRY_MS = 5000
 local NO_DATA_MS = 10000   -- NOW comes every second: this long without data, reconnect
 local WINDOW_MS = 10000    -- the minimum / maximum stats cover this long
+local RECV_READS = 8       -- reads of 4 KB at most per pass
 
 local args = {...}
 if #args == 0 and arg then args = {table.unpack(arg)} end -- run/lua give them in arg
@@ -304,10 +305,19 @@ local function pump()
     if sys.millis() >= retryAt then connect() end
     return
   end
+  -- Everything waiting, not just one read: after a slow pass (the screen
+  -- saver, a busy system) a backlog would leave every note late.
   local data = sock:recv(4096)
   if data == nil then
     disconnect("The station went off air")
     return
+  end
+  local last = data
+  for _ = 2, RECV_READS do
+    if #last < 4096 then break end -- that read did not fill up: nothing more
+    last = sock:recv(4096)
+    if not last or #last == 0 then break end
+    data = data .. last
   end
   local ms = sys.millis()
   if #data > 0 then

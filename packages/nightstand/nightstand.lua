@@ -17,8 +17,12 @@ local PORTRAIT = H > W
 local SMALL = H < 400
 font.size(PORTRAIT and 96 or SMALL and 100 or 176)
 sky.size(W, H)
+-- TERMINA 8.15: the video card draws the falling weather (termina.fx).
+local fx = termina.fx
+if fx and fx.available() then sky.useFx(fx) end
 local REFRESH_MS, RETRY_MS = 15 * 60 * 1000, 60 * 1000
 local FRAME_MS, NIGHT_FRAME_MS = 80, 500
+local CLOCK_MS = 200  -- the card draws the particles: only the clock to follow
 local NIGHT_FROM, NIGHT_TO, NIGHT_INK = 22, 7, 4
 
 local place, fahrenheit = wd.load()
@@ -243,8 +247,12 @@ return function()
     for _, x in ipairs(colons) do font.colon(screen, x, CLOCK_Y + oy, ss % 2 == 0 and P(15) or 0) end
   end
   lastSec = ss
-  if night then return NIGHT_FRAME_MS end
+  if night then
+    sky.off()
+    return NIGHT_FRAME_MS
+  end
   sky.mood(wx and wd.kind(wx.code) or "clear", wx and wx.night)
   sky.step(screen)
+  if sky.cardDraws() and not sky.flashes() then return CLOCK_MS end
   return FRAME_MS
 end

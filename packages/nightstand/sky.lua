@@ -159,6 +159,48 @@ local function spawn(p, top)
   p.w = random(16, 60)
 end
 
+-- With a video card that draws particles (TERMINA 8.15, termina.fx), the
+-- card moves them itself, 60 times a second, and the screen saver only
+-- wakes for the clock: the same weather, in its pixels (S per dot), with
+-- the speeds of the Lua steps below (about 12 a second).
+local fx, emitter, S = nil, nil, 2
+local STEPS = 12.5  -- Lua steps a second (FRAME_MS 80)
+
+-- After M.size(): the card's library.
+function M.useFx(lib)
+  fx = lib
+  S = lib.size() // W
+end
+
+function M.cardDraws() return fx ~= nil end
+function M.flashes() return kind == "storm" end  -- lightning: Lua frames
+
+local function fxSettings(m)
+  local w, h = W * S, H * S
+  local function px(dots) return math.floor(dots * S + 0.5) end
+  -- dots per step to pixels per second
+  local function speed(lo, hi) return {px(lo * STEPS), px(hi * STEPS)} end
+  if m == "rain" or m == "storm" or m == "drizzle" then
+    local fast = m ~= "drizzle"
+    local ky, kx = fast and 2.2 or 1, fast and 0.75 or 0.35
+    return {count = SETUP[m](), shape = "streak", size = px(fast and 8 or 3),
+      color = fast and 9 or 11, x = -w // 2, y = -px(60), w = w * 3 // 2, h = px(60),
+      vx = speed(6 * kx, 10 * kx), vy = speed(6 * ky, 10 * ky), behind = true, prefill = true}
+  elseif m == "snow" then
+    return {count = SETUP[m](), shape = "block", size = px(2), color = 15, y = -px(4), h = px(4),
+      vy = speed(6 * 0.25, 10 * 0.25), wobble = px(10), wobble_ms = 6300, behind = true,
+      prefill = true}
+  elseif m == "haze" then
+    return {count = SETUP[m](), shape = "streak", size = 32, color = 8, x = -32, w = 32,
+      vx = speed(6 * 0.06, 10 * 0.06), behind = true, prefill = true}
+  elseif m == "sparkle" then
+    return {count = SETUP[m](), shape = "block", size = px(1), color = 14, color2 = 0,
+      twinkle = 5600, life = 11200, behind = true}
+  end
+  return {count = SETUP[m](), shape = "block", size = px(1), color = 15, color2 = 8,
+    twinkle = 10000, behind = true}  -- stars
+end
+
 -- The weather kind (from weather.data) and the time of day choose what falls.
 function M.mood(k, night)
   local m
@@ -168,19 +210,43 @@ function M.mood(k, night)
   else m = "sparkle" end
   if m == kind then return end
   kind, parts = m, {}
+  if fx then
+    if emitter then emitter:remove() end
+    emitter = fx.emitter(fxSettings(m))
+    return
+  end
   for i = 1, SETUP[m]() do
     parts[i] = {}
     spawn(parts[i], false)
   end
 end
 
+-- Nothing falls any more (the night picture stands still).
+function M.off()
+  if emitter then emitter:remove() end
+  emitter, kind = nil, nil
+end
+
 local function streak(s, p, len, c)
   for k = 0, len - 1 do put(s, I(p.x - k * 0.35), I(p.y - k), c) end
 end
 
--- One step of the animation (about 12 per second).
+local function lightning(s)
+  if kind ~= "storm" or t % 90 >= 2 then return end  -- a flash now and then
+  local x, y = W // 8 + (t * 37) % (W * 3 // 4), 0
+  while y < H * 2 // 5 do
+    local nx, ny = x + random(-14, 14), y + random(12, 24)
+    local n = math.max(math.abs(nx - x), ny - y)
+    for i = 0, n do put(s, I(x + (nx - x) * i / n), I(y + (ny - y) * i / n), 14) end
+    x, y = nx, ny
+  end
+end
+
+-- One step of the animation (about 12 per second). With the card drawing
+-- the particles, only the lightning is left.
 function M.step(s)
   t = t + 1
+  if fx then return lightning(s) end
   if kind == "rain" or kind == "storm" or kind == "drizzle" then
     local fast = kind ~= "drizzle"
     for _, p in ipairs(parts) do
@@ -189,15 +255,7 @@ function M.step(s)
       if p.y - 8 > H or p.x > W + 8 then spawn(p, true) end
       streak(s, p, fast and 8 or 3, fast and 9 or 11)
     end
-    if kind == "storm" and t % 90 < 2 then  -- a flash now and then
-      local x, y = W // 8 + (t * 37) % (W * 3 // 4), 0
-      while y < H * 2 // 5 do
-        local nx, ny = x + random(-14, 14), y + random(12, 24)
-        local n = math.max(math.abs(nx - x), ny - y)
-        for i = 0, n do put(s, I(x + (nx - x) * i / n), I(y + (ny - y) * i / n), 14) end
-        x, y = nx, ny
-      end
-    end
+    lightning(s)
   elseif kind == "snow" then
     for _, p in ipairs(parts) do
       p.y = p.y + p.v * 0.25

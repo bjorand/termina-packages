@@ -8,14 +8,34 @@ local net, sys, fs = termina.net, termina.sys, termina.fs
 local M = {}
 M.__index = M
 
-M.KNOWN = "/etc/irc.known"      -- TLS fingerprints seen: "host:port sha256"
-M.VERSION = "Termina IRC 1.0.0"
+M.KNOWN = "/etc/irc.known"      -- fingerprints seen (verify = false): "host:port sha256"
+M.VERSION = "Termina IRC 1.1.0"
 
 local CONNECT_MS = 10000
 local IDLE_PING_MS = 90000      -- this long without data: PING the server
 local DEAD_MS = 180000          -- this long: the link is dead, reconnect
 local RETRY_MIN, RETRY_MAX = 5000, 300000
 local READS = 8                 -- reads of 2 KB at most per pass
+
+-- ------------------------------------------------------- certificates
+
+-- TERMINA 8.13 checks TLS servers against the root CAs (net.connect
+-- verify); older firmware ignores the option, then only the fingerprints
+-- seen before protect the connection.
+local function firmwareVerifies()
+  local v = sys.version and sys.version() or ""
+  local major, minor = v:match("^(%d+)%.(%d+)")
+  major, minor = tonumber(major) or 0, tonumber(minor) or 0
+  return major > 8 or (major == 8 and minor >= 13)
+end
+M.CAN_VERIFY = firmwareVerifies()
+
+-- Whether the server's certificate is checked against the root CAs. A
+-- server with a self-signed certificate sets verify = false in
+-- /etc/irc.conf: its fingerprint is then trusted on first use.
+function M:verifies()
+  return self.cfg.tls and self.cfg.verify ~= false and M.CAN_VERIFY
+end
 
 -- ------------------------------------------------------------ known hosts
 
@@ -120,12 +140,22 @@ function M:connect()
   model.info(string.format("Connecting to %s%s...", self:hostport(), cfg.tls and " (TLS)" or ""), self)
   if model.redraw then model.redraw() end -- connect blocks: show it first
   collectgarbage()
-  local s, err = net.connect(cfg.host, cfg.port, {timeout = CONNECT_MS, tls = cfg.tls})
+  local verify = self:verifies()
+  local s, err = net.connect(cfg.host, cfg.port, {timeout = CONNECT_MS, tls = cfg.tls, verify = verify})
   if not s then
-    self:drop("Cannot reach " .. self:hostport() .. ": " .. tostring(err), true)
+    err = tostring(err)
+    if verify and err:find("X509", 1, true) then
+      -- Trying again will not help: say what to do instead.
+      self.stopped = true
+      self:drop("The certificate of " .. self:hostport() .. " is not trusted (" .. err ..
+        "). Is the clock set? A server with a self-signed certificate needs verify = false in " ..
+        "/etc/irc.conf", false)
+      return
+    end
+    self:drop("Cannot reach " .. self:hostport() .. ": " .. err, true)
     return
   end
-  if cfg.tls then
+  if cfg.tls and not verify then
     local fp = s:fingerprint()
     if fp then
       local old = loadKnown()[self:hostport()]

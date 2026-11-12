@@ -1,5 +1,6 @@
 -- irc: a full-screen IRC client. Several servers at once, each with its
--- channels and private conversations in windows, TLS (trust on first use)
+-- channels and private conversations in windows, TLS (certificates checked
+-- against the root CAs, or trusted on first use with verify = false)
 -- and SASL login. Settings: /etc/irc.conf (written on the first run).
 --
 --   irc                   connects to the servers marked autoconnect

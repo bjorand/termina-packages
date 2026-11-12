@@ -18,6 +18,7 @@ return {
       host = "irc.libera.chat",
       port = 6697,
       tls = true,
+      -- verify = false,         -- self-signed certificate: trust on first use
       autoconnect = true,
       autojoin = {},             -- channels, e.g. { "#lua", "#termina" }
       -- A registered nick: SASL login.

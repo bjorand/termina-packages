@@ -108,7 +108,7 @@ local HELP = {
   {"layout [auto|tall|wide]", "portrait or landscape screen (auto: by width)"},
   {"nicks", "show or hide the nick list (Alt+N)"},
   {"raw line", "send a line as is (also /quote)"},
-  {"trust", "accept a server's changed TLS certificate"},
+  {"trust", "accept a changed certificate (server with verify = false)"},
   {"save", "save the servers and channels to " .. config.PATH},
   {"quit [message]", "leave every server and exit"},
 }

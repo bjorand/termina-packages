@@ -15,7 +15,13 @@
 -- of the music the notes received go (the server sends them a few seconds
 -- early; at 0 the notes come too late and are skipped), "late" counts the
 -- skipped notes, "silence" the longest wait for data from the server, "loop"
--- the longest pass of this program's loop.
+-- the longest pass of this program's loop, "card" how late the sequencer
+-- played a note at most.
+--
+-- With TERMINA 8.11.0 or later the notes due within a second are handed to
+-- the sequencer (synth.at), which plays them on time from a task of its own
+-- even when this program waits for its turn; before, they are played from
+-- this program's loop.
 if not termina or not termina.synth or not termina.net then
   print("radio needs TERMINA 8.5.0 or later")
   return
@@ -27,6 +33,7 @@ local DEFAULT_HOST = "radio.vendetta84.com"
 local DEFAULT_PORT = 8484
 local DELAY = 150          -- ms of safety after the server's air time
 local LATE = 250           -- a note this late is skipped
+local AHEAD = 1000         -- ms of music handed to the sequencer in advance
 local RETRY_MS = 5000
 local NO_DATA_MS = 10000   -- NOW comes every second: this long without data, reconnect
 local WINDOW_MS = 10000    -- the minimum / maximum stats cover this long
@@ -60,6 +67,7 @@ host = host or target
 port = tonumber(port) or DEFAULT_PORT
 
 local card = synth.present()
+local seq = card and synth.at ~= nil -- the sequencer plays the notes
 local VOICES = synth.VOICES or 4
 local WAVES = {pulse = true, triangle = true, saw = true, noise = true}
 
@@ -75,6 +83,8 @@ local status = "Tuning in to " .. host .. "..."
 local offset = nil         -- local ms - air ms
 local syncMin, syncStart = nil, 0
 local queue, qhead, qtail = {}, 1, 0 -- events not played yet: queue[qhead..qtail]
+local qsent = 1            -- queue[qsent..qtail]: not handed to the sequencer yet
+local sentVol = {}         -- the volume each voice was last set to in the sequencer
 local lastT = nil          -- air time of the last event received
 local vol = {}             -- the volume each voice was last set to
 local meter = {}           -- [v] = {start, ms, vol, label}
@@ -85,7 +95,7 @@ local sock = nil           -- the connection to the server
 -- Signal stats. *Now are being measured over the current window; the others
 -- are the last full window's, shown on screen.
 local st = {
-  late = 0, played = 0, reconnects = 0,
+  late = 0, played = 0, reconnects = 0, cardLate = 0,
   bufMin = nil, bufMinNow = nil,
   gapMax = 0, gapMaxNow = 0,
   loopMax = 0, loopMaxNow = 0,
@@ -115,6 +125,10 @@ local function rollStats(ms)
   st.gapMax, st.gapMaxNow = st.gapMaxNow, 0
   st.loopMax, st.loopMaxNow = st.loopMaxNow, 0
   st.jitter, st.jitterNow = st.jitterNow, 0
+  if seq then
+    local _, worst = synth.stats(true)
+    st.cardLate = worst
+  end
 end
 
 -- ------------------------------------------------------------ protocol
@@ -159,6 +173,8 @@ end
 -- song, the sounding notes.
 local function resetPlayback()
   queue, qhead, qtail, lastT = {}, 1, 0, nil
+  qsent, sentVol = 1, {}
+  if seq then synth.clear() end
   offset, syncMin = nil, nil
   track, meter = nil, {}
   vol = {}
@@ -238,26 +254,59 @@ local function play(e, now)
   elseif e.kind == "PATCH" then
     if e.v >= 1 and e.v <= VOICES and WAVES[e.patch.wave] then
       vol[e.v] = e.patch.vol
-      if card then synth.voice(e.v, e.patch) end
+      if card and not seq then synth.voice(e.v, e.patch) end
     end
   elseif e.kind == "N" then
     if e.v < 1 or e.v > VOICES or not e.hz then return end
-    if now - e.t > LATE then
+    -- With the sequencer the card already played it (or it was too late to).
+    if (seq and e.late) or (not seq and now - e.t > LATE) then
       st.late = st.late + 1
       return
     end
     if e.vol and e.vol ~= vol[e.v] then
       vol[e.v] = e.vol
-      if card then synth.voice(e.v, {vol = e.vol}) end
+      if card and not seq then synth.voice(e.v, {vol = e.vol}) end
     end
-    if card then synth.note(e.v, e.hz, e.ms) end
+    if card and not seq then synth.note(e.v, e.hz, e.ms) end
     st.played = st.played + 1
     meter[e.v] = {start = sys.millis(), ms = e.ms, vol = e.vol or vol[e.v] or 15,
       label = e.v == 4 and drumName(e.hz, e.ms) or noteName(e.hz)}
   end
 end
 
--- Plays what is due. Patches and track changes are never skipped, even late.
+-- Hands what plays within AHEAD ms to the sequencer, at its local time.
+-- Patches are never skipped; a note already too late is (and counted when
+-- its time comes in playDue). Stops when the sequencer's queue is full.
+local function handOver()
+  if not seq or not offset then return end
+  local now = airNow()
+  if qsent < qhead then qsent = qhead end -- played meanwhile (the queue was full)
+  while qsent <= qtail do
+    local e = queue[qsent]
+    if e.t > now + AHEAD then break end
+    local at = e.t + offset + DELAY
+    if e.kind == "PATCH" then
+      if e.v >= 1 and e.v <= VOICES and WAVES[e.patch.wave] then
+        if not synth.at(at, "voice", e.v, e.patch) then return end
+        sentVol[e.v] = e.patch.vol
+      end
+    elseif e.kind == "N" and e.v >= 1 and e.v <= VOICES and e.hz then
+      if now - e.t > LATE then
+        e.late = true
+      else
+        if e.vol and e.vol ~= sentVol[e.v] then
+          if not synth.at(at, "voice", e.v, {vol = e.vol}) then return end
+          sentVol[e.v] = e.vol
+        end
+        if not synth.at(at, "note", e.v, e.hz, e.ms) then return end
+      end
+    end
+    qsent = qsent + 1
+  end
+end
+
+-- Plays what is due (with the sequencer: only the screen's side of it).
+-- Patches and track changes are never skipped, even late.
 local function playDue()
   local now = airNow()
   if not now then return end
@@ -266,7 +315,7 @@ local function playDue()
     queue[qhead] = nil
     qhead = qhead + 1
   end
-  if qhead > qtail and qhead > 1 then queue, qhead, qtail = {}, 1, 0 end
+  if qhead > qtail and qhead > 1 then queue, qhead, qtail, qsent = {}, 1, 0, 1 end
   if lastT then
     local b = buffered()
     if not st.bufMinNow or b < st.bufMinNow then st.bufMinNow = b end
@@ -454,8 +503,9 @@ local function draw()
   scr.put(2, y, string.format("min %s  silence %s  jitter %d ms",
     st.bufMin and secs(st.bufMin) or "-", secs(st.gapMax), st.jitter), DIM)
   y = y + 1
-  scr.put(2, y, string.format("late %d/%d  reconnects %d  loop %d ms  queue %d",
-    st.late, st.late + st.played, st.reconnects, st.loopMax, qtail - qhead + 1),
+  scr.put(2, y, string.format("late %d/%d  reconnects %d  loop %d ms  queue %d%s",
+    st.late, st.late + st.played, st.reconnects, st.loopMax, qtail - qhead + 1,
+    seq and string.format("  card %d ms", st.cardLate) or ""),
     st.late > 0 and WARN or DIM)
 
   y = y + 2
@@ -514,10 +564,12 @@ local function main()
   end
   connect()
   if quiet and status then print(status) end
-  local lastDraw, lastLoop, lastLate, lastList = 0, sys.millis(), 0, sys.millis()
+  -- Quiet: the first summary after 30 s, not an empty one at once.
+  local lastDraw, lastLoop, lastLate, lastList = quiet and sys.millis() or 0, sys.millis(), 0, sys.millis()
   st.windowStart = lastLoop
   while true do
     pump()
+    handOver()
     playDue()
     if not quiet then
       for e in key.poll do
@@ -535,10 +587,11 @@ local function main()
     if not quiet and now - lastDraw >= 80 then
       lastDraw = now
       draw()
-    elseif quiet and st.late > lastLate and now - lastDraw >= 10000 then
+    elseif quiet and ((st.late > lastLate and now - lastDraw >= 10000) or now - lastDraw >= 30000) then
       lastDraw, lastLate = now, st.late
-      print(string.format("radio: %d late notes, buffer min %s, silence %s, loop %d ms",
-        st.late, st.bufMin and secs(st.bufMin) or "-", secs(st.gapMax), st.loopMax))
+      print(string.format("radio: %d notes, %d late, buffer min %s, silence %s, loop %d ms%s",
+        st.played, st.late, st.bufMin and secs(st.bufMin) or "-", secs(st.gapMax), st.loopMax,
+        seq and string.format(", card %d ms", st.cardLate) or ""))
     end
     sys.sleep(2)
   end

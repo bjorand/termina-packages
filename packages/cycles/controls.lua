@@ -111,10 +111,25 @@ local CONVERT = {
   end,
   gain = number, velocity = number, duty = number, legato = number,
   attack = number, decay = number, sustain = number, release = number,
-  voice = number, slide = number, freq = number,
+  voice = number, slide = number, freq = number, postgain = number, lpf = number,
 }
 local ALIAS = {sound = "s", att = "attack", dec = "decay", sus = "sustain", rel = "release",
-               clip = "legato", pw = "duty", v = "voice"}
+               clip = "legato", pw = "duty", v = "voice", cutoff = "lpf", lp = "lpf"}
+
+-- Strudel effects the card has no way to play: accepted and left out, so
+-- that Strudel code runs (dsl reports which ones were met).
+M.IGNORED = {
+  "hpf", "hp", "hcutoff", "bandf", "bpf", "bp", "resonance", "lpq", "hpq", "bpq", "lpenv", "hpenv",
+  "lpattack", "lpdecay", "lpsustain", "lprelease", "ftype", "crush", "coarse", "shape", "distort",
+  "room", "size", "roomsize", "rsize", "delay", "delaytime", "delayfeedback", "delayfb", "dry",
+  "pan", "orbit", "vowel", "phaser", "phaserdepth", "tremolo", "speed", "begin", "end", "cut",
+  "loop", "bank", "fm", "fmh", "fmi", "fmenv", "fmdecay", "fmsustain", "detune", "unison", "spread",
+  "compressor", "vib", "vibrato", "vibmod", "penv", "pattack", "pdecay", "prelease", "lfo",
+}
+-- Drawing in Strudel's page: nothing to draw here, the pattern goes on.
+M.VISUAL = {"_scope", "scope", "_pianoroll", "pianoroll", "_punchcard", "punchcard", "_spiral",
+            "spiral", "_pitchwheel", "pitchwheel", "_spectrum", "spectrum", "color", "markcss"}
+M.ignoredUsed = {}
 
 local function control(name)
   local conv = CONVERT[name]
@@ -138,6 +153,15 @@ end
 for alias, name in pairs(ALIAS) do
   M[alias] = M[name]
   methods[alias] = methods[name]
+end
+for _, name in ipairs(M.IGNORED) do
+  methods[name] = function(p)
+    M.ignoredUsed[name] = true
+    return p
+  end
+end
+for _, name in ipairs(M.VISUAL) do
+  methods[name] = function(p) return p end
 end
 
 -- adsr("0.01:0.1:0.5:0.2"): attack, decay, sustain, release in one value.
@@ -193,8 +217,8 @@ local S = M.SOUNDS
 S.tri, S.sine, S.saw, S.white, S.pink, S.brown = S.triangle, S.triangle, S.sawtooth, S.noise, S.noise, S.noise
 S.sq, S.sn, S.ch, S.hat, S.kick, S.snare, S.rs = S.square, S.sd, S.hh, S.hh, S.bd, S.sd, S.rim
 
--- Defaults of the melodic sounds.
-local DEFAULT = {attack = 0.001, decay = 0.1, sustain = 0.7, release = 0.05, gain = 1, duty = 0.5}
+-- Defaults of the melodic sounds (gain 0.8 as in Strudel).
+local DEFAULT = {attack = 0.001, decay = 0.1, sustain = 0.7, release = 0.05, gain = 0.8, duty = 0.5}
 
 -- What an event plays: {wave, duty, vol, attack, decay, sustain, release
 -- (card units), hz, drop, voice}, or nil and why for a value it cannot
@@ -222,18 +246,35 @@ function M.render(v)
     drop = {}
     for i, d in ipairs(snd.drop) do drop[i] = {d[1], d[2] * hz / snd.hz} end
   end
+  -- No filter on the card: a low-pass makes noise darker, that is all.
+  if snd.wave == "noise" and tonumber(v.lpf) then hz = math.min(hz, tonumber(v.lpf)) end
   hz = math.max(8, math.min(7800, hz))
-  local gain = (tonumber(get("gain")) or 1) * (tonumber(v.velocity) or 1)
+  local gain = (tonumber(get("gain")) or 0.8) * (tonumber(v.velocity) or 1) * (tonumber(v.postgain) or 1)
   local voice = tonumber(v.voice)
+  -- Sustain as in Strudel: given an attack or a release only, the note
+  -- holds at full level; given a decay, it decays to nothing.
+  local sustain = tonumber(v.sustain)
+  if sustain == nil and snd.sustain == nil and (v.attack ~= nil or v.decay ~= nil or v.release ~= nil) then
+    sustain = v.decay ~= nil and 0 or 1
+  end
+  sustain = sustain or tonumber(get("sustain")) or 0
+  if gain <= 0 then return nil end  -- muted: no voice taken
+  local attack = M.rate(tonumber(get("attack")) or 0)
+  local decay = M.rate(tonumber(get("decay")) or 0.1)
+  local level = math.max(0, math.min(15, math.floor(sustain * 15 + 0.5)))
   return {
     wave = snd.wave,
     duty = math.max(0, math.min(255, math.floor((tonumber(get("duty")) or 0.5) * 256 + 0.5))),
-    vol = math.max(0, math.min(15, math.floor(gain * 12 + 0.5))),
-    attack = M.rate(tonumber(get("attack")) or 0),
-    decay = M.rate(tonumber(get("decay")) or 0.1),
-    sustain = math.max(0, math.min(15, math.floor((tonumber(get("sustain")) or 0) * 15 + 0.5))),
+    -- 4-bit volume, on a square-root curve: closer to how loud it sounds.
+    vol = math.max(0, math.min(15, math.floor(15 * math.sqrt(math.max(0, gain)) + 0.5))),
+    attack = attack,
+    decay = decay,
+    sustain = level,
     release = M.rate(tonumber(get("release")) or 0.05),
     releaseSec = tonumber(get("release")) or 0.05,
+    -- Without sustain, silent after the attack and the decay (ms): the
+    -- voice is free then, whatever the length of the note.
+    silentAfter = level == 0 and RATE_MS[attack + 1] + RATE_MS[decay + 1] or nil,
     hz = hz,
     drop = drop,
     legato = tonumber(v.legato) or 1,

@@ -153,7 +153,7 @@ end
 do
   local t = dsl.translate("$: s(\"bd\")\n  .every(2, x => x.fast(2))\n// hi\nconst a = 1")
   check("translate", t == "_[#_ + 1] = s(\"bd\")\n  .every(2, function(x) return x.fast(2) end)\n--" ..
-                      " hi\nlocal a = 1", t)
+                      " hi\na = 1", t)
   check("translate strings", dsl.translate("s(\"a => b\")") == "s(\"a => b\")")
   check("translate backquote", dsl.translate("s(`a\nb`)") == "s([[a\nb]])")
 
@@ -174,6 +174,57 @@ do
   same("eval curried", evalEvents('s("a b").every(2, fast(2))', 1, 2), "s=a@1-3/2 s=b@3/2-2")
   same("eval rev fn", evalEvents('s("a b").every(1, rev)'), "s=b@0-1/2 s=a@1/2-1")
   same("eval arrow", evalEvents('note("c").off(0.5, x => x.add(7))'), "note=48@0-1 note=55@1/2-3/2")
+  -- Backquotes holding "]]".
+  same("eval backquote ]]", evalEvents("note(`<\n[e5 [b4 c5]]\n[c5 a4]\n>`)"),
+       "note=76@0-1/2 note=71@1/2-3/4 note=72@3/4-1")
+
+  -- JavaScript as Strudel files have it.
+  local js = [==[
+/* a block comment
+   with (brackets] */
+const mute = false;
+let melody = `<
+  [[E E] [- C]]
+  [G -]
+>`.add("12")
+if (mute) {
+  melody = melody.postgain(0)
+} else {
+  melody = melody.fast(1)
+}
+$: arrange(
+  // first part
+  [1, sqr(melody)._scope()],
+  [2, sqr("c3")],
+)
+function sqr(x){
+  if (mute) return note(x).gain(0);
+  return note(x).s("square").clip("0.7").crush(4);
+}
+]==]
+  local res, err = dsl.eval(js)
+  check("js eval", res and res.pattern, err)
+  if res and res.pattern then
+    same("js cycle 0", events(res.pattern, 0, 1),
+         "legato=0.7,note=64,s=square@0-1/4 legato=0.7,note=64,s=square@1/4-1/2 legato=0.7,note=60,s=square@3/4-1")
+    same("js cycle 1", events(res.pattern, 1, 2), "legato=0.7,note=48,s=square@1-2")
+    same("js cycle 3", events(res.pattern, 3, 4), "legato=0.7,note=67,s=square@3-7/2")
+    check("js ignored", res.log[#res.log] == "Not on the sound card, ignored: crush", res.log[#res.log])
+  end
+  check("js if return", (dsl.translate("if (a) return b;")):find("if a then return b end", 1, true))
+  check("js ops", dsl.translate("a === b && !c") == "a == b  and   not c", dsl.translate("a === b && !c"))
+  check("lua if kept", dsl.translate("if (a) then b() end") == "if (a) then b() end")
+  check("lua table key", dsl.translate("t = {[1] = 2}") == "t = {[1] = 2}")
+  check("lua index", dsl.translate("x = t[1]") == "x = t[1]")
+  check("string metatable restored", getmetatable("").__index == string)
+
+  -- Envelopes as in Strudel: decay alone decays to nothing, release alone
+  -- holds.
+  check("adsr decay", C.render({s = "triangle", decay = 0.9}).sustain == 0)
+  check("adsr release", C.render({s = "square", release = 0}).sustain == 15)
+  check("adsr default", C.render({s = "square"}).sustain == 11)
+  check("muted", C.render({s = "square", gain = 0}) == nil)
+
   check("eval error", not dsl.eval('note("c"'))
   check("eval runtime error", not dsl.eval('note("c").nope(1)'))
   for _, ex in ipairs(require "cycles.examples") do
@@ -222,7 +273,8 @@ do
   check("player first", notes[1] and notes[1].t == 1000, notes[1] and notes[1].t)
   local voices = {}
   for _, e in ipairs(notes) do voices[e.args[1]] = true end
-  check("player voices", voices[1] and voices[2])
+  -- Each kick is silent after 151 ms: the same voice serves them all.
+  check("player voices", voices[1] and not voices[2])
 
   -- Tempo change keeps time going forward.
   sent = {}

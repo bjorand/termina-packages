@@ -177,8 +177,21 @@ local function hap(whole, part, value) return {whole = whole, part = part, value
 local silence = pattern(function() return {} end)
 M.silence = silence
 
+-- One pattern per value: patterns never change, so "E" or "-" written a
+-- hundred times in a song is one object, not a hundred (memory).
+local pureCache = {
+  string = setmetatable({}, {__mode = "v"}),
+  integer = setmetatable({}, {__mode = "v"}),
+  float = setmetatable({}, {__mode = "v"}),
+  boolean = setmetatable({}, {__mode = "v"}),
+}
+
 local function pure(v)
-  return pattern(function(s)
+  local kind = math.type(v) or type(v)
+  local cache = v == v and pureCache[kind] or nil  -- NaN is no table key
+  local p = cache and cache[v]
+  if p then return p end
+  p = pattern(function(s)
     local out = {}
     for _, c in ipairs(spanCycles(s)) do
       local b = raw(c.b.n // c.b.d, 1)
@@ -186,6 +199,8 @@ local function pure(v)
     end
     return out
   end)
+  if cache then cache[v] = p end
+  return p
 end
 M.pure = pure
 
@@ -357,10 +372,34 @@ end
 
 local function _late(p, t) return _early(p, -tofrac(t)) end
 
+-- n patterns in one cycle, each in its step: the same as fast(n, slowcat)
+-- (step i of cycle c plays cycle c of pattern i), in one object.
 local function fastcat(pats)
-  if #pats == 0 then return silence end
-  if #pats == 1 then return pats[1] end
-  return _fast(slowcat(pats), #pats)
+  local n = #pats
+  if n == 0 then return silence end
+  if n == 1 then return pats[1] end
+  local fn = raw(n, 1)
+  return pattern(function(s)
+    local out = {}
+    -- Steps k (all cycles together) that the query meets.
+    local k0 = (s.b * fn):cyc()
+    local k1 = math.max(k0, (s.e * fn):cyc() - ((s.e * fn):pos().n == 0 and 1 or 0))
+    for k = k0, k1 do
+      local c, i = k // n, k % n + 1
+      local sb, se = raw(k, n), raw(k + 1, n)
+      local part = sect(s, span(sb, se))
+      if part and (part.b < part.e or s.b == s.e) then
+        -- Inner time t' = n*t - (n-1)*c - (i-1), and back.
+        local shift = raw((n - 1) * c + i - 1, 1)
+        local function back(t) return (t + shift) / fn end
+        for _, h in ipairs(pats[i].query(span(part.b * fn - shift, part.e * fn - shift))) do
+          out[#out + 1] = hap(h.whole and span(back(h.whole.b), back(h.whole.e)),
+                              span(back(h.part.b), back(h.part.e)), h.value)
+        end
+      end
+    end
+    return out
+  end)
 end
 
 -- Squeezes each cycle of p into its first 1/factor, silence after.
@@ -684,6 +723,34 @@ function M.timeCat(...)
   return timecat(items)
 end
 function M.rev(p) return methods.rev(reify(p)) end
+
+-- arrange({2, a}, {8, b}): a for 2 cycles, then b for 8, then again. Each
+-- section goes on from where it was the time before, like in Strudel.
+function M.arrange(...)
+  local secs, total = {}, 0
+  for _, s in ipairs({...}) do
+    local n = math.tointeger(tonumber(s[1]))
+    if not n or n < 1 then error("arrange: {cycles, pattern} expected", 2) end
+    secs[#secs + 1] = {n = n, start = total, pat = reify(s[2])}
+    total = total + n
+  end
+  if total == 0 then return silence end
+  return splitQueries(pattern(function(s)
+    local c = s.b:cyc()
+    local loop, pos = c // total, c % total
+    for _, sec in ipairs(secs) do
+      if pos < sec.start + sec.n then
+        local d = raw(loop * sec.n + pos - sec.start - c, 1)
+        local out = {}
+        for i, h in ipairs(sec.pat.query(span(s.b + d, s.e + d))) do
+          out[i] = hap(h.whole and span(h.whole.b - d, h.whole.e - d), span(h.part.b - d, h.part.e - d), h.value)
+        end
+        return out
+      end
+    end
+    return {}
+  end))
+end
 M.slowcat, M.fastcat = slowcat, fastcat
 
 local TAU = 2 * math.pi

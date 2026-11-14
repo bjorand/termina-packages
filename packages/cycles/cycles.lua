@@ -160,28 +160,40 @@ local function text() return table.concat(lines, "\n") .. "\n" end
 
 -- -------------------------------------------------------------- drawing
 
--- Colors of one line: mini-notation strings and comments.
-local function drawLine(y, s)
+-- Colors of one line: mini-notation strings and comments. state is what
+-- goes on from the line before (a `string` or a /* comment */); returns
+-- the state at the end of the line. Without y, only the state is computed.
+local function drawLine(y, s, state)
   if not utf8.len(s) then s = s:gsub("[\128-\255]", "?") end
   local x = -left
-  local quote
+  local quote = state == "`" and "`" or nil
+  local block = state == "/*"
+  local skip = 0
   for i, code in utf8.codes(s) do
     local c = utf8.char(code)
     local two = s:sub(i, i + 1)
-    if not quote and (two == "--" or (two == "//" and s:sub(1, i - 1):match("^%s*$"))) then
-      scr.put(x, y, s:sub(i), COMMENT)
-      return
-    end
     local attr = TEXT
-    if quote then
+    if skip > 0 then
+      skip, attr = skip - 1, COMMENT
+    elseif block then
+      attr = COMMENT
+      if two == "*/" then block, skip = false, 1 end
+    elseif quote then
       attr = STR
       if c == quote then quote = nil end
+    elseif two == "--" or two == "//" then
+      if y then scr.put(x, y, s:sub(i), COMMENT) end
+      return nil
+    elseif two == "/*" then
+      block, attr = true, COMMENT
     elseif c == '"' or c == "'" or c == "`" then
       quote, attr = c, STR
     end
-    scr.put(x, y, c, attr)
+    if y then scr.put(x, y, c, attr) end
     x = x + 1
   end
+  if block then return "/*" end
+  if quote == "`" then return "`" end
 end
 
 local function voicesText()
@@ -204,10 +216,12 @@ local function draw()
   scr.put(COLS - 1 - #right, 1, right, ta)
 
   local rows = viewRows()
+  local st
+  for k = 1, top - 1 do st = drawLine(nil, lines[k], st) end  -- strings and comments above
   for r = 0, rows - 1 do
     local l = lines[top + r]
     if not l then break end
-    drawLine(TOP + r, l)
+    st = drawLine(TOP + r, l, st)
   end
 
   scr.bar(STATUS, BAR)

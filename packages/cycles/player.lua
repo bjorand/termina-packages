@@ -84,22 +84,26 @@ function M:hush()
   self.patch = {}
 end
 
--- Picks a voice for a note from t to free.
-function M:voiceFor(r, t, free)
+-- Picks a voice for a note from t to free: a free voice that already has
+-- this sound (no patch to send), else the next free one in turn, else the
+-- one free the soonest.
+function M:voiceFor(r, t, free, key)
   local v = r.voice
   if not v then
-    -- The first voice free at t, from the one after the last used; or the
-    -- one free the soonest.
-    local best
+    local best, same
     for k = 0, VOICES - 1 do
       local c = (self.next + k - 1) % VOICES + 1
       if self.busy[c] <= t then
+        if self.patch[c] == key then
+          same = c
+          break
+        end
+        best = best and self.busy[best] <= t and best or c
+      elseif not best or (self.busy[best] > t and self.busy[c] < self.busy[best]) then
         best = c
-        break
       end
-      if not best or self.busy[c] < self.busy[best] then best = c end
     end
-    v = best
+    v = same or best
     self.next = v % VOICES + 1
   end
   self.busy[v] = free
@@ -113,9 +117,11 @@ end
 -- Plays one event at ms t, lasting ms.
 function M:send(r, t, ms)
   local gate = math.max(1, math.min(65535, math.floor(ms * r.legato + 0.5)))
-  local v = self:voiceFor(r, t, t + gate + math.floor(r.releaseSec * 1000))
-  local s = self.synth
   local key = patchKey(r)
+  local free = t + gate + math.floor(r.releaseSec * 1000)
+  if r.silentAfter then free = math.min(free, t + r.silentAfter) end
+  local v = self:voiceFor(r, t, free, key)
+  local s = self.synth
   if self.patch[v] ~= key then
     s.at(t, "voice", v, {wave = r.wave, duty = r.duty, vol = r.vol, attack = r.attack, decay = r.decay,
                          sustain = r.sustain, release = r.release})

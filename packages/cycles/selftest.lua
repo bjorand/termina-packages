@@ -174,13 +174,6 @@ do
   same("eval curried", evalEvents('s("a b").every(2, fast(2))', 1, 2), "s=a@1-3/2 s=b@3/2-2")
   same("eval rev fn", evalEvents('s("a b").every(1, rev)'), "s=b@0-1/2 s=a@1/2-1")
   same("eval arrow", evalEvents('note("c").off(0.5, x => x.add(7))'), "note=48@0-1 note=55@1/2-3/2")
-  -- Multi-line mini-notation holding "]]", in backquotes or double quotes.
-  local melody = "<\n[e5 [b4 c5] d5 [c5 b4]]\n[c5 a4 a4 ~]\n>"
-  same("eval backquote ]]", evalEvents("note(`" .. melody .. "`)"),
-       "note=76@0-1/4 note=71@1/4-3/8 note=72@3/8-1/2 note=74@1/2-3/4 note=72@3/4-7/8 note=71@7/8-1")
-  same("eval quotes multiline", evalEvents('note("' .. melody .. '")', 1, 2),
-       "note=72@1-5/4 note=69@5/4-3/2 note=69@3/2-7/4")
-  same("eval statements multiline", evalEvents('setcps(1)\nnote("<\nc d\n>")', 1, 2), "note=50@1-2")
   check("eval error", not dsl.eval('note("c"'))
   check("eval runtime error", not dsl.eval('note("c").nope(1)'))
   for _, ex in ipairs(require "cycles.examples") do

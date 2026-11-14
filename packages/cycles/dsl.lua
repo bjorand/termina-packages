@@ -20,6 +20,16 @@ local methods = P.methods
 
 -- --------------------------------------------------------------- translation
 
+-- A Lua long string holding s: [[...]], or [=[...]=] and so on when s
+-- contains "]]" (mini-notation often does: "[c5 b4]]").
+local function longString(s)
+  local eq = ""
+  while s:find("]" .. eq .. "]", 1, true) do eq = eq .. "=" end
+  -- A newline right after the opening bracket would be dropped by Lua.
+  if s:sub(1, 1) == "\n" then s = "\n" .. s end
+  return "[" .. eq .. "[" .. s .. "]" .. eq .. "]"
+end
+
 -- Calls f(text, inString) for the pieces of src outside and inside string
 -- literals ("...", '...', [[...]] and `...`).
 local function pieces(src, f)
@@ -43,12 +53,13 @@ local function pieces(src, f)
       elseif c == "`" then
         e = src:find("`", s + 1, true)
       else
+        -- Double quotes may span lines, as in Strudel; single quotes not.
         local j = s + 1
         while j <= n do
           local ch = src:sub(j, j)
           if ch == "\\" then
             j = j + 2
-          elseif ch == c or ch == "\n" then
+          elseif ch == c or (ch == "\n" and c == "'") then
             break
           else
             j = j + 1
@@ -59,7 +70,7 @@ local function pieces(src, f)
       e = math.min(e or n, n)
       out[#out + 1] = f(src:sub(i, s - 1), false)
       local lit = src:sub(s, e)
-      if c == "`" then lit = "[[" .. lit:sub(2, -2) .. "]]" end
+      if c == "`" or (c == '"' and lit:find("\n", 1, true)) then lit = longString(lit:sub(2, -2)) end
       out[#out + 1] = f(lit, true)
       i = e + 1
     end
@@ -96,8 +107,9 @@ local function arrows(code)
   end
 end
 
--- Strudel habits to Lua (outside strings).
-function M.translate(src)
+-- Strudel habits to Lua (outside strings). Returns the code with each
+-- string literal replaced by "\1<n>\2", and a function that puts them back.
+local function translate(src)
   src = src:gsub("\r", "")
   local lines = {}
   for line in (src .. "\n"):gmatch("(.-)\n") do
@@ -118,7 +130,14 @@ function M.translate(src)
     return text
   end)
   code = arrows(code)
-  return (code:gsub("\1(%d+)\2", function(k) return saved[tonumber(k)] end))
+  return code, function(s)
+    return (s:gsub("\1(%d+)\2", function(k) return saved[tonumber(k)] end))
+  end
+end
+
+function M.translate(src)
+  local code, restore = translate(src)
+  return restore(code)
 end
 
 -- --------------------------------------------------------------- environment
@@ -192,19 +211,21 @@ function M.eval(src)
   end
   methods.p = methods.play
 
-  local code = M.translate(src)
+  local masked, restore = translate(src)
+  local code = restore(masked)
   -- An expression first; else statements, the last one returned when it
-  -- can be.
+  -- can be. Lines are looked at with the strings masked, so that a line
+  -- inside a multi-line string is never taken for a statement.
   local chunk = load("return " .. code, "=code", "t", env)
   if not chunk then
     local lines = {}
-    for line in (code .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = line end
+    for line in (masked .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = line end
     for k = #lines, 1, -1 do
       local l = lines[k]
-      if l:match("^[%a_\"'%[%(]") and not l:match("^end") and not l:match("^local%s") and
+      if l:match("^[%a_\1%[%(]") and not l:match("^end") and not l:match("^local%s") and
          not l:match("^_%[") and not l:match("^%-%-") then
         local try = table.concat(lines, "\n", 1, k - 1) .. "\nreturn " .. table.concat(lines, "\n", k)
-        chunk = load(try, "=code", "t", env)
+        chunk = load(restore(try), "=code", "t", env)
         break
       end
     end

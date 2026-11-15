@@ -15,246 +15,232 @@
 --   a(3,8,2)      euclidean rhythm: 3 onsets over 8 steps, rotated by 2
 --
 -- Words are kept as strings ("c#4", "bd:3") and numbers become numbers.
+--
+-- The string is cut into tokens by two C calls (gsub, gmatch), then read
+-- token by token: on the ESP32 every Lua call costs, and a song holds
+-- dozens of these strings. Parsed strings are kept: a string met again
+-- (in the same code or the next time it runs) costs nothing.
 local P = require "cycles.pattern"
 
 local M = {}
 
-local WORD = "^[%w#%.%-:_']+"
+-- Parsed strings: weakly by string, and for sure those of the code run
+-- last and the time before (M.newRun), so that running it again after an
+-- edit parses only the strings that changed.
+local cache = setmetatable({}, {__mode = "v"})
+local keepNow, keepBefore = {}, {}
 
--- Parses src; returns a pattern, or raises "mini: <why> at <column>".
-function M.parse(src)
-  local i = 1
-  local seed = 0
+function M.newRun()
+  keepBefore, keepNow = keepNow, {}
+end
 
-  local function fail(msg) error(string.format("mini: %s at column %d of %q", msg, i, src), 0) end
+-- Called before each string actually parsed (not found in the cache): a
+-- player can queue its music meanwhile (M.busy = function() ... end).
+M.busy = nil
 
-  local function ws()
-    i = src:find("[^%s]", i) or #src + 1
-  end
+local function fail(S, msg)
+  error(string.format("mini: %s near %q in %q", msg, S.toks[S.k] or "the end", S.src), 0)
+end
 
-  local function peek()
-    ws()
-    return src:sub(i, i)
-  end
+local function value(w)
+  local n = tonumber(w)
+  if n then return n end
+  return w
+end
 
-  local function value(w)
-    local n = tonumber(w)
-    if n then return n end
-    return w
-  end
+-- Stop tokens of each kind of sequence.
+local STOP_TOP = {[","] = true, ["|"] = true}
+local STOP_BRACKET = {[","] = true, ["|"] = true, ["]"] = true}
+local STOP_ANGLE = {[","] = true, ["|"] = true, [">"] = true}
+local STOP_EUCLID = {[","] = true, [")"] = true}
 
-  local parseStack, parseSequence, parseStep
+local parseStack, parseSequence, parseStep
 
-  -- A factor after * or /: a number, or a bracketed pattern.
-  local function parseFactor()
-    local c = src:sub(i, i)
-    if c == "[" or c == "<" then return parseStep(true) end
-    local s, e = src:find("^%-?[%d%.]+", i)
-    if not s then fail("a number expected") end
-    i = e + 1
-    return tonumber(src:sub(s, e)) or fail("bad number")
-  end
+-- Items {weight, pattern} of a list of steps.
+local function items(steps)
+  local out = {}
+  for i, st in ipairs(steps) do out[i] = {st.weight, st.pat} end
+  return out
+end
 
-  -- The arguments of an euclidean rhythm: (k, n[, r]).
-  local function parseEuclid(p)
-    i = i + 1
-    local args, plain = {}, true
-    while true do
-      local steps = parseSequence({[","] = true, [")"] = true})
-      local arg
-      if #steps == 1 and steps[1].num ~= nil then
-        arg = steps[1].num
-      else
-        plain = false
-        arg = P.timecat((function()
-          local items = {}
-          for k, st in ipairs(steps) do items[k] = {st.weight, st.pat} end
-          return items
-        end)())
-      end
-      args[#args + 1] = arg
-      local c = peek()
-      if c == ")" then
-        i = i + 1
-        break
-      elseif c == "," then
-        i = i + 1
-      else
-        fail("')' expected")
-      end
-    end
-    if #args < 2 or #args > 3 then fail("euclid takes 2 or 3 numbers") end
-    if plain then return P.methods.euclid(p, args[1], args[2], args[3]) end
-    -- Patterned arguments: "c(<3 5>,8)".
-    local function pat(x) return P.isPattern(x) and x or P.pure(x) end
-    local k, n, r = pat(args[1]), pat(args[2]), pat(args[3] or 0)
-    local both = P.appLeft(P.appLeft(k, n, function(a, b) return {a, b} end), r,
-                           function(a, b) return {a[1], a[2], b} end)
-    return P.innerJoin(P.fmap(both, function(t) return P.methods.euclid(p, t[1], t[2], t[3]) end))
-  end
-
-  -- One step: an atom or a group, then its modifiers. Returns {pat, weight,
-  -- count (repeats), num (when a plain number)}.
-  function parseStep(bare)
-    local c = peek()
-    local st = {weight = 1, count = 1}
-    if c == "[" then
-      i = i + 1
-      st.pat = parseStack("]")
-    elseif c == "<" then
-      i = i + 1
-      st.pat = parseStack(">", true)
-    elseif c == "~" then
-      i = i + 1
-      st.pat = P.silence
-    elseif c == "{" then
-      fail("polymeters { } are not supported")
+-- The arguments of an euclidean rhythm, at "(": (k, n[, r]).
+local function euclid(S, st)
+  S.k = S.k + 1
+  local args, plain = {}, true
+  while true do
+    local steps = parseSequence(S, STOP_EUCLID)
+    local arg
+    if #steps == 1 and steps[1].num ~= nil then
+      arg = steps[1].num
     else
-      local s, e = src:find(WORD, i)
-      if not s then fail("unexpected '" .. c .. "'") end
-      local w = src:sub(s, e)
-      i = e + 1
-      if w == "-" then
-        st.pat = P.silence
-      else
-        local v = value(w)
-        st.pat = P.pure(v)
-        if type(v) == "number" then st.num = v end
-      end
+      plain = false
+      arg = P.timecat(items(steps))
     end
-    if bare then return st.pat end
-    -- Modifiers, glued to the step.
-    while true do
-      c = src:sub(i, i)
-      if c == "*" or c == "/" then
-        i = i + 1
-        local f = parseFactor()
-        st.pat = c == "*" and P.methods.fast(st.pat, f) or P.methods.slow(st.pat, f)
-        st.num = nil
-      elseif c == "!" then
-        local s, e = src:find("^!%d+", i)
-        if s then
-          st.count = st.count + tonumber(src:sub(s + 1, e)) - 1
-          i = e + 1
-        else
-          st.count = st.count + 1
-          i = i + 1
-        end
-      elseif c == "@" then
-        local s, e = src:find("^@[%d%.]+", i)
-        if not s then fail("a weight expected after @") end
-        st.weight = tonumber(src:sub(s + 1, e)) or fail("bad weight")
-        i = e + 1
-      elseif c == "?" then
-        local s, e = src:find("^%?[%d%.]+", i)
-        local amount = 0.5
-        if s then
-          amount = tonumber(src:sub(s + 1, e)) or fail("bad amount")
-          i = e + 1
-        else
-          i = i + 1
-        end
-        seed = seed + 1
-        st.pat = P.degradeBy(st.pat, amount, seed)
-        st.num = nil
-      elseif c == "(" then
-        st.pat = parseEuclid(st.pat)
-        st.num = nil
-      elseif c == ":" then
-        fail("':' must follow a word")
-      else
-        break
-      end
-    end
-    return st
+    args[#args + 1] = arg
+    local t = S.toks[S.k]
+    S.k = S.k + 1
+    if t == ")" then break end
+    if t ~= "," then fail(S, "')' expected") end
   end
+  if #args < 2 or #args > 3 then fail(S, "euclid takes 2 or 3 numbers") end
+  local p = st.pat
+  if plain then return P.methods.euclid(p, args[1], args[2], args[3]) end
+  -- Patterned arguments: "c(<3 5>,8)".
+  local function pat(x) return P.isPattern(x) and x or P.pure(x) end
+  local both = P.appLeft(P.appLeft(pat(args[1]), pat(args[2]), function(a, b) return {a, b} end),
+                         pat(args[3] or 0), function(a, b) return {a[1], a[2], b} end)
+  return P.innerJoin(P.fmap(both, function(t) return P.methods.euclid(p, t[1], t[2], t[3]) end))
+end
 
-  -- Steps until one of the stop characters (not consumed).
-  function parseSequence(stop)
-    local steps, feet = {}, nil
-    while true do
-      local c = peek()
-      if c == "" or stop[c] then break end
-      local s, e = src:find("^[%._!]%f[%s%]%>,|%)%z]", i)
-      if s then
-        local w = src:sub(s, e)
-        i = e + 1
-        local last = steps[#steps]
-        if w == "." then
-          feet = feet or {}
-          feet[#feet + 1] = steps
-          steps = {}
-        elseif not last then
-          fail("'" .. w .. "' needs a step before it")
-        elseif w == "_" then
-          last.weight = last.weight + 1
-        else
-          last.count = last.count + 1
-        end
+-- Modifiers in a token: "*2", "@3", "?", "!2", "/2?0.3"...
+local function modify(S, st, mods)
+  for op, arg in mods:gmatch("([%*/!@%?])([^%*/!@%?]*)") do
+    if op == "*" or op == "/" then
+      local f
+      if arg == "" then
+        f = parseStep(S, true)  -- a pattern: "a*<2 3>"
       else
-        steps[#steps + 1] = parseStep()
+        f = tonumber(arg) or fail(S, "bad factor")
       end
+      st.pat = op == "*" and P.methods.fast(st.pat, f) or P.methods.slow(st.pat, f)
+      st.num = nil
+    elseif op == "!" then
+      st.count = st.count + (arg == "" and 1 or (tonumber(arg) or fail(S, "bad count")) - 1)
+    elseif op == "@" then
+      st.weight = tonumber(arg) or fail(S, "a weight expected after @")
+    else
+      S.seed = S.seed + 1
+      st.pat = P.degradeBy(st.pat, arg == "" and 0.5 or (tonumber(arg) or fail(S, "bad amount")), S.seed)
+      st.num = nil
     end
-    -- Repeats become separate steps.
-    local function expand(list)
-      local out = {}
-      for _, st in ipairs(list) do
-        for _ = 1, st.count do out[#out + 1] = {pat = st.pat, weight = st.weight, num = st.num} end
-      end
-      return out
+  end
+end
+
+-- One step: a word or a group, and its modifiers. Returns {pat, weight,
+-- count, num (a plain number)}, or the pattern alone when bare.
+function parseStep(S, bare)
+  local t = S.toks[S.k]
+  local st = {weight = 1, count = 1}
+  local mods
+  if t == "[" then
+    S.k = S.k + 1
+    st.pat = parseStack(S, "]")
+  elseif t == "<" then
+    S.k = S.k + 1
+    st.pat = parseStack(S, ">", true)
+  elseif t == "{" then
+    fail(S, "polymeters { } are not supported")
+  else
+    local base
+    base, mods = t:match("^([^%*/!@%?]+)(.*)$")
+    if not base then fail(S, "a step is needed first") end
+    S.k = S.k + 1
+    if base == "~" or base == "-" then
+      st.pat = P.silence
+    else
+      local v = value(base)
+      st.pat = P.pure(v)
+      if type(v) == "number" then st.num = v end
     end
-    if feet then
+  end
+  if bare then return st.pat end
+  if mods and mods ~= "" then modify(S, st, mods) end
+  -- Modifiers after a group ("[a b]*2"), elongation, euclid.
+  while true do
+    t = S.toks[S.k]
+    if t == "(" then
+      st.pat = euclid(S, st)
+      st.num = nil
+    elseif t == "_" then
+      st.weight = st.weight + 1
+      S.k = S.k + 1
+    elseif t and t:find("^[%*/!@%?]") then
+      S.k = S.k + 1
+      modify(S, st, t)
+    else
+      break
+    end
+  end
+  return st
+end
+
+-- Steps up to a stop token (not taken). Repeats become separate steps.
+function parseSequence(S, stop)
+  local steps, feet = {}, nil
+  while true do
+    local t = S.toks[S.k]
+    if t == nil or stop[t] then break end
+    if t == "." then
+      feet = feet or {}
       feet[#feet + 1] = steps
-      local out = {}
-      for k, f in ipairs(feet) do
-        local items = {}
-        for j, st in ipairs(expand(f)) do items[j] = {st.weight, st.pat} end
-        out[k] = {pat = P.timecat(items), weight = 1}
-      end
-      return out
+      steps = {}
+      S.k = S.k + 1
+    elseif t == ")" or t == "]" or t == ">" then
+      fail(S, "unexpected '" .. t .. "'")
+    else
+      local st = parseStep(S)
+      for _ = 1, st.count do steps[#steps + 1] = st end
     end
-    return expand(steps)
   end
-
-  -- Sequences separated by "," (together) or "|" (one of them), up to close.
-  -- alternate: "<...>", each sequence plays one step per cycle.
-  function parseStack(close, alternate)
-    local stop = {[","] = true, ["|"] = true}
-    if close then stop[close] = true end
-    local pats, sep = {}, nil
-    while true do
-      local steps = parseSequence(stop)
-      local items, total = {}, 0
-      for k, st in ipairs(steps) do
-        items[k] = {st.weight, st.pat}
-        total = total + st.weight
-      end
-      local p = P.timecat(items)
-      if alternate and total > 0 then p = P.methods.slow(p, total) end
-      pats[#pats + 1] = p
-      local c = peek()
-      if c == "," or c == "|" then
-        if sep and sep ~= c then fail("',' and '|' cannot be mixed") end
-        sep = c
-        i = i + 1
-      elseif close and c == close then
-        i = i + 1
-        break
-      elseif c == "" then
-        if close then fail("'" .. close .. "' expected") end
-        break
-      else
-        fail("unexpected '" .. c .. "'")
-      end
-    end
-    if sep == "|" then
-      seed = seed + 1
-      return P.randcat(pats, seed)
-    end
-    return P.stack(pats)
+  if feet then
+    feet[#feet + 1] = steps
+    local out = {}
+    for i, f in ipairs(feet) do out[i] = {pat = P.timecat(items(f)), weight = 1, count = 1} end
+    return out
   end
+  return steps
+end
 
-  return parseStack(nil)
+-- Sequences separated by "," (together) or "|" (one of them), up to close.
+-- alternate: "<...>", each sequence plays one step per cycle.
+function parseStack(S, close, alternate)
+  local stop = close == "]" and STOP_BRACKET or close == ">" and STOP_ANGLE or STOP_TOP
+  local pats, sep = {}, nil
+  while true do
+    local steps = parseSequence(S, stop)
+    local p = P.timecat(items(steps))
+    if alternate then
+      local total = 0
+      for _, st in ipairs(steps) do total = total + st.weight end
+      if total > 0 then p = P.methods.slow(p, total) end
+    end
+    pats[#pats + 1] = p
+    local t = S.toks[S.k]
+    if t == "," or t == "|" then
+      if sep and sep ~= t then fail(S, "',' and '|' cannot be mixed") end
+      sep = t
+      S.k = S.k + 1
+    elseif close and t == close then
+      S.k = S.k + 1
+      break
+    elseif t == nil then
+      if close then fail(S, "'" .. close .. "' expected") end
+      break
+    else
+      fail(S, "unexpected '" .. t .. "'")
+    end
+  end
+  if sep == "|" then
+    S.seed = S.seed + 1
+    return P.randcat(pats, S.seed)
+  end
+  return P.stack(pats)
+end
+
+-- Parses src; returns a pattern, or raises "mini: <why> near <token>".
+function M.parse(src)
+  local p = cache[src]
+  if p then
+    keepNow[src] = p
+    return p
+  end
+  if M.busy then M.busy() end
+  local toks = {}
+  for t in src:gsub("[%[%]<>,|%(%){}]", " %0 "):gmatch("%S+") do toks[#toks + 1] = t end
+  local S = {toks = toks, k = 1, seed = 0, src = src}
+  p = parseStack(S, nil)
+  cache[src], keepNow[src] = p, p
+  return p
 end
 
 P.parse = M.parse

@@ -4,16 +4,15 @@
 -- (the span of the full event, nil for continuous signals), a part (the
 -- piece of it inside the query) and a value.
 --
--- Time is exact: fractions of two integers, so that 1/3 + 2/3 is 1. Numbers
--- are 32-bit on the machine, so the arithmetic below avoids multiplying two
--- large numerators (a cycle count times a denominator is fine, two of them
--- are not).
+-- Time is an integer count of ticks, T per cycle. T = 20160 = 2^6*3^2*5*7:
+-- halves down to 64ths, thirds, fifths, sevenths and ninths of a cycle are
+-- exact, anything else is rounded to the tick (50 us at 1 cycle/s). Plain
+-- integers keep the ESP32 fast: no table, no gcd per operation. With 32-bit
+-- numbers, time goes up to about 100000 cycles.
 local M = {}
 
--- ---------------------------------------------------------------- fractions
-
-local F = {}
-F.__index = F
+local T = 20160
+M.T = T
 
 local function gcd(a, b)
   if a < 0 then a = -a end
@@ -21,30 +20,26 @@ local function gcd(a, b)
   while b ~= 0 do a, b = b, a % b end
   return a
 end
+M.gcd = gcd
 
-local function raw(n, d) return setmetatable({n = n, d = d}, F) end
-
-local function frac(n, d)
-  d = d or 1
-  if d == 0 then error("division by zero in a time value", 2) end
-  if d < 0 then n, d = -n, -d end
-  local g = gcd(n, d)
-  if g > 1 then n, d = n // g, d // g end
-  return raw(n, d)
+-- t * n / d rounded down, without computing t * n (it could overflow).
+local function scale(t, n, d)
+  if d == 1 then return t * n end
+  return (t // d) * n + ((t % d) * n) // d
 end
+M.scale = scale
 
--- Turns a Lua number into a fraction: integers exactly, other numbers by
--- continued fractions (0.25 -> 1/4, 0.1 -> 1/10), denominator up to maxDen.
-local function tofrac(x, maxDen)
-  if getmetatable(x) == F then return x end
+-- A number as a ratio n/d (d > 0): integers exactly, others by continued
+-- fractions (0.25 -> 1/4, 0.1 -> 1/10), denominator up to maxDen.
+local function ratio(x, maxDen)
   if type(x) ~= "number" then
     local v = tonumber(x)
     if not v then error("not a number: " .. tostring(x), 3) end
     x = v
   end
   local i = math.tointeger(x)
-  if i then return raw(i, 1) end
-  maxDen = maxDen or 10000
+  if i then return i, 1 end
+  maxDen = maxDen or 1000
   local neg = x < 0
   if neg then x = -x end
   local h0, h1, k0, k1 = 0, 1, 1, 0
@@ -60,59 +55,32 @@ local function tofrac(x, maxDen)
     y = 1 / r
   end
   if k1 == 0 then h1, k1 = math.floor(x + 0.5), 1 end
-  return frac(neg and -h1 or h1, k1)
+  local g = gcd(h1, k1)
+  if g > 1 then h1, k1 = h1 // g, k1 // g end
+  return neg and -h1 or h1, k1
+end
+M.ratio = ratio
+
+-- Cycles (a number, or n/d) to ticks.
+function M.frac(n, d) return scale(n, T, d or 1) end
+function M.time(x)
+  local i = math.tointeger(x)
+  if i then return i * T end
+  x = tonumber(x) or error("not a number: " .. tostring(x), 2)
+  local w = math.floor(x)
+  return w * T + math.floor((x - w) * T + 0.5)
 end
 
-local function add(a, b)
-  if a.d == b.d then return frac(a.n + b.n, a.d) end
-  local g = gcd(a.d, b.d)
-  return frac(a.n * (b.d // g) + b.n * (a.d // g), a.d // g * b.d)
+-- Ticks as "n/d" cycles ("1/3", "2", "-1/4"), for tests and messages.
+function M.show(t)
+  local g = gcd(t, T)
+  if g == T then return tostring(t // T) end
+  return (t // g) .. "/" .. (T // g)
 end
 
-local function mul(a, b)
-  local g1, g2 = gcd(a.n, b.d), gcd(b.n, a.d)
-  if g1 == 0 then g1 = 1 end
-  if g2 == 0 then g2 = 1 end
-  return frac((a.n // g1) * (b.n // g2), (a.d // g2) * (b.d // g1))
-end
-
-local function cmp(a, b)
-  local fa, fb = a.n // a.d, b.n // b.d
-  if fa ~= fb then return fa < fb and -1 or 1 end
-  local ra, rb = (a.n % a.d) * b.d, (b.n % b.d) * a.d
-  if ra == rb then return 0 end
-  return ra < rb and -1 or 1
-end
-
-F.__add = function(a, b) return add(tofrac(a), tofrac(b)) end
-F.__sub = function(a, b)
-  b = tofrac(b)
-  return add(tofrac(a), raw(-b.n, b.d))
-end
-F.__mul = function(a, b) return mul(tofrac(a), tofrac(b)) end
-F.__div = function(a, b)
-  a, b = tofrac(a), tofrac(b)
-  if b.n == 0 then error("division by zero in a time value", 2) end
-  if b.n < 0 then return mul(a, raw(-b.d, -b.n)) end
-  return mul(a, raw(b.d, b.n))
-end
-F.__unm = function(a) return raw(-a.n, a.d) end
-F.__eq = function(a, b) return a.n == b.n and a.d == b.d end
-F.__lt = function(a, b) return cmp(tofrac(a), tofrac(b)) < 0 end
-F.__le = function(a, b) return cmp(tofrac(a), tofrac(b)) <= 0 end
-F.__tostring = function(a) return a.d == 1 and tostring(a.n) or a.n .. "/" .. a.d end
-
-function F.sam(a) return raw(a.n // a.d, 1) end              -- start of its cycle
-function F.cyc(a) return a.n // a.d end                       -- cycle number
-function F.pos(a) return raw(a.n % a.d, a.d) end              -- position in its cycle
-function F.num(a) return a.n / a.d end
-
-local ZERO, ONE = raw(0, 1), raw(1, 1)
-local function fmin(a, b) return cmp(a, b) <= 0 and a or b end
-local function fmax(a, b) return cmp(a, b) >= 0 and a or b end
-
-M.frac, M.tofrac, M.isfrac = frac, tofrac, function(x) return getmetatable(x) == F end
-M.ZERO, M.ONE = ZERO, ONE
+local function sam(t) return t - t % T end
+local function cyc(t) return t // T end
+M.sam, M.cyc = sam, cyc
 
 -- ------------------------------------------------------------------- spans
 
@@ -124,7 +92,7 @@ local function spanCycles(s)
   if b == e then return {s} end
   local out = {}
   while b < e do
-    local nxt = raw(b.n // b.d + 1, 1)
+    local nxt = sam(b) + T
     if e <= nxt then
       out[#out + 1] = span(b, e)
       break
@@ -136,10 +104,10 @@ local function spanCycles(s)
 end
 
 local function sect(x, y)
-  local b, e = fmax(x.b, y.b), fmin(x.e, y.e)
-  local c = cmp(b, e)
-  if c > 0 then return nil end
-  if c == 0 then
+  local b = x.b > y.b and x.b or y.b
+  local e = x.e < y.e and x.e or y.e
+  if b > e then return nil end
+  if b == e then
     -- A point does not meet a span at its end.
     if b == x.e and x.b < x.e then return nil end
     if b == y.e and y.b < y.e then return nil end
@@ -175,10 +143,13 @@ M.pattern, M.isPattern, M.methods = pattern, isPattern, methods
 local function hap(whole, part, value) return {whole = whole, part = part, value = value} end
 
 local silence = pattern(function() return {} end)
+silence._silent = true
 M.silence = silence
 
 -- One pattern per value: patterns never change, so "E" or "-" written a
--- hundred times in a song is one object, not a hundred (memory).
+-- hundred times in a song is one object, not a hundred (memory). A pure
+-- pattern is marked (_pure, _v): sequences and controls use its value
+-- without querying it.
 local pureCache = {
   string = setmetatable({}, {__mode = "v"}),
   integer = setmetatable({}, {__mode = "v"}),
@@ -194,11 +165,12 @@ local function pure(v)
   p = pattern(function(s)
     local out = {}
     for _, c in ipairs(spanCycles(s)) do
-      local b = raw(c.b.n // c.b.d, 1)
-      out[#out + 1] = hap(span(b, b + ONE), c, v)
+      local b = sam(c.b)
+      out[#out + 1] = hap(span(b, b + T), c, v)
     end
     return out
   end)
+  p._pure, p._v = true, v
   if cache then cache[v] = p end
   return p
 end
@@ -222,18 +194,33 @@ local function splitQueries(p)
   end)
 end
 
+-- Query times through qf, event times back through hf.
 local function withTime(p, qf, hf)
   return pattern(function(s)
     local out = {}
     for i, h in ipairs(p.query(span(qf(s.b), qf(s.e)))) do
-      out[i] = hap(h.whole and span(hf(h.whole.b), hf(h.whole.e)), span(hf(h.part.b), hf(h.part.e)), h.value)
+      local w = h.whole
+      out[i] = hap(w and span(hf(w.b), hf(w.e)), span(hf(h.part.b), hf(h.part.e)), h.value)
     end
     return out
   end)
 end
 
-local function fmap(p, f)
+-- The same events, moved by d ticks.
+local function shift(p, d)
+  if d == 0 then return p end
   return pattern(function(s)
+    local out = {}
+    for i, h in ipairs(p.query(span(s.b - d, s.e - d))) do
+      local w = h.whole
+      out[i] = hap(w and span(w.b + d, w.e + d), span(h.part.b + d, h.part.e + d), h.value)
+    end
+    return out
+  end)
+end
+
+local function fmapOf(p, f)
+  local q = pattern(function(s)
     local out = {}
     for _, h in ipairs(p.query(s)) do
       local v = f(h.value)
@@ -241,6 +228,26 @@ local function fmap(p, f)
     end
     return out
   end)
+  q._fsrc, q._ff = p, f
+  return q
+end
+
+-- The values changed by f (nil leaves the event out). fmap of an fmap is
+-- one level, not two: one event made per query instead of one per level.
+local function fmap(p, f)
+  if p._pure then
+    local v = f(p._v)
+    if v == nil then return silence end
+    return pure(v)
+  end
+  if p._fsrc then
+    local g = p._ff
+    return fmapOf(p._fsrc, function(v)
+      local x = g(v)
+      if x ~= nil then return f(x) end
+    end)
+  end
+  return fmapOf(p, f)
 end
 M.fmap = fmap
 
@@ -255,8 +262,12 @@ local function filterHaps(p, keep)
 end
 
 -- The structure of p, with values f(p's value, other's value) taken from
--- other where each event of p starts.
+-- other where each event of p starts. A constant other is not queried.
 local function appLeft(p, other, f)
+  if other._pure then
+    local v = other._v
+    return fmap(p, function(x) return f(x, v) end)
+  end
   return pattern(function(s)
     local out = {}
     for _, hl in ipairs(p.query(s)) do
@@ -301,12 +312,15 @@ local function reify(x)
 end
 M.reify = reify
 
--- Wraps fn(p, arg, ...) so that arg may be a pattern too: "<1 2>".
+-- Wraps fn(p, arg, ...) so that arg may be a pattern too: "<1 2>". A
+-- constant pattern is used as its value.
 local function patternify(fn)
   return function(p, arg, ...)
-    if isPattern(arg) or type(arg) == "string" then
+    if type(arg) == "string" then arg = reify(arg) end
+    if isPattern(arg) then
+      if arg._pure then return fn(p, arg._v, ...) end
       local n, rest = select("#", ...), {...}
-      return innerJoin(fmap(reify(arg), function(v) return fn(p, v, table.unpack(rest, 1, n)) end))
+      return innerJoin(fmap(arg, function(v) return fn(p, v, table.unpack(rest, 1, n)) end))
     end
     return fn(p, arg, ...)
   end
@@ -324,77 +338,97 @@ end
 -- ---------------------------------------------------------------- combining
 
 local function stack(pats)
-  if #pats == 1 then return pats[1] end
+  local live = {}
+  for _, p in ipairs(pats) do
+    if not p._silent then live[#live + 1] = p end
+  end
+  if #live == 0 then return silence end
+  if #live == 1 then return live[1] end
   return pattern(function(s)
     local out = {}
-    for _, p in ipairs(pats) do
+    for _, p in ipairs(live) do
       for _, h in ipairs(p.query(s)) do out[#out + 1] = h end
     end
     return out
   end)
 end
 
--- One pattern per cycle, in turn.
+-- One pattern per cycle, in turn: cycle c plays cycle c // n of pattern
+-- c % n + 1.
 local function slowcat(pats)
   local n = #pats
   if n == 0 then return silence end
   if n == 1 then return pats[1] end
   return splitQueries(pattern(function(s)
-    local c = s.b.n // s.b.d
-    local off = raw(c - c // n, 1)
+    local c = cyc(s.b)
+    local p = pats[c % n + 1]
+    if p._silent then return {} end
+    local off = (c - c // n) * T
     local out = {}
-    for i, h in ipairs(pats[c % n + 1].query(span(s.b - off, s.e - off))) do
-      out[i] = hap(h.whole and span(h.whole.b + off, h.whole.e + off), span(h.part.b + off, h.part.e + off),
-                   h.value)
+    for i, h in ipairs(p.query(span(s.b - off, s.e - off))) do
+      local w = h.whole
+      out[i] = hap(w and span(w.b + off, w.e + off), span(h.part.b + off, h.part.e + off), h.value)
     end
     return out
   end))
 end
 
-local function _fast(p, f)
-  f = tofrac(f)
-  if f.n == 0 then return silence end
-  if f.n < 0 then return methods.rev(_fast(p, -f)) end
-  local inv = ONE / f
-  return withTime(p, function(t) return t * f end, function(t) return t * inv end)
+-- Faster by n/d.
+local function fastND(p, n, d)
+  if p._silent then return p end
+  if n == 0 then return silence end
+  if n < 0 then return methods.rev(fastND(p, -n, d)) end
+  if n == d then return p end
+  return withTime(p, function(t) return scale(t, n, d) end, function(t) return scale(t, d, n) end)
 end
+
+local function _fast(p, f) return fastND(p, ratio(f)) end
 
 local function _slow(p, f)
-  f = tofrac(f)
-  if f.n == 0 then return silence end
-  return _fast(p, ONE / f)
+  local n, d = ratio(f)
+  if n == 0 then return silence end
+  if n < 0 then n, d = -n, -d end
+  return fastND(p, d, n)
 end
 
-local function _early(p, t)
-  t = tofrac(t)
-  return withTime(p, function(x) return x + t end, function(x) return x - t end)
-end
+local function _early(p, t) return shift(p, -M.time(t)) end
+local function _late(p, t) return shift(p, M.time(t)) end
 
-local function _late(p, t) return _early(p, -tofrac(t)) end
-
--- n patterns in one cycle, each in its step: the same as fast(n, slowcat)
--- (step i of cycle c plays cycle c of pattern i), in one object.
+-- n patterns in one cycle, each in its step: step i of cycle c plays cycle
+-- c of pattern i. Constant steps (most of them: notes, rests) are made
+-- right here, without a query.
 local function fastcat(pats)
   local n = #pats
   if n == 0 then return silence end
   if n == 1 then return pats[1] end
-  local fn = raw(n, 1)
+  local Tn = T % n
   return pattern(function(s)
     local out = {}
     -- Steps k (all cycles together) that the query meets.
-    local k0 = (s.b * fn):cyc()
-    local k1 = math.max(k0, (s.e * fn):cyc() - ((s.e * fn):pos().n == 0 and 1 or 0))
+    -- (one more at the end: with n not dividing T, a step boundary is
+    -- rounded, and sect() leaves out what is not met).
+    local k0 = scale(s.b, n, T)
+    local k1 = scale(s.e, n, T) + 1
     for k = k0, k1 do
-      local c, i = k // n, k % n + 1
-      local sb, se = raw(k, n), raw(k + 1, n)
-      local part = sect(s, span(sb, se))
-      if part and (part.b < part.e or s.b == s.e) then
-        -- Inner time t' = n*t - (n-1)*c - (i-1), and back.
-        local shift = raw((n - 1) * c + i - 1, 1)
-        local function back(t) return (t + shift) / fn end
-        for _, h in ipairs(pats[i].query(span(part.b * fn - shift, part.e * fn - shift))) do
-          out[#out + 1] = hap(h.whole and span(back(h.whole.b), back(h.whole.e)),
-                              span(back(h.part.b), back(h.part.e)), h.value)
+      local i = k % n + 1
+      local p = pats[i]
+      if not p._silent then
+        local sb, se = scale(k, T, n), scale(k + 1, T, n)
+        local q = span(sb, se)
+        local part = sect(s, q)
+        if part and (part.b < part.e or s.b == s.e) then
+          if p._pure then
+            out[#out + 1] = hap(q, part, p._v)
+          else
+            -- Inner time t' = c*T + (t - sb)*n - r, r = k*T mod n.
+            local cT = (k // n) * T
+            local r = ((k % n) * Tn) % n
+            local function back(t) return sb + (t - cT + r) // n end
+            for _, h in ipairs(p.query(span(cT + (part.b - sb) * n - r, cT + (part.e - sb) * n - r))) do
+              local w = h.whole
+              out[#out + 1] = hap(w and span(back(w.b), back(w.e)), span(back(h.part.b), back(h.part.e)), h.value)
+            end
+          end
         end
       end
     end
@@ -402,53 +436,63 @@ local function fastcat(pats)
   end)
 end
 
--- Squeezes each cycle of p into its first 1/factor, silence after.
-local function _fastGap(p, factor)
+-- Squeezes each cycle of p into its first n/d... d/n of it (factor n/d >=
+-- 1), silence after.
+local function _fastGap(p, n, d)
   return splitQueries(pattern(function(s)
-    local cycle = s.b:sam()
-    local bpos = fmin((s.b - cycle) * factor, ONE)
-    local epos = fmin((s.e - cycle) * factor, ONE)
-    if bpos >= ONE then return {} end
+    local cycle = sam(s.b)
+    local bpos = math.min(scale(s.b - cycle, n, d), T)
+    local epos = math.min(scale(s.e - cycle, n, d), T)
+    if bpos >= T then return {} end
     local out = {}
     for _, h in ipairs(p.query(span(cycle + bpos, cycle + epos))) do
       local pb, pe = h.part.b, h.part.e
-      local hc = pb:sam()
-      local nb = hc + fmin((pb - hc) / factor, ONE)
-      local ne = hc + fmin((pe - hc) / factor, ONE)
+      local hc = sam(pb)
+      local nb = hc + math.min(scale(pb - hc, d, n), T)
+      local ne = hc + math.min(scale(pe - hc, d, n), T)
       local whole
-      if h.whole then whole = span(nb - (pb - h.whole.b) / factor, ne + (h.whole.e - pe) / factor) end
+      if h.whole then whole = span(nb - scale(pb - h.whole.b, d, n), ne + scale(h.whole.e - pe, d, n)) end
       out[#out + 1] = hap(whole, span(nb, ne), h.value)
     end
     return out
   end))
 end
 
--- Each cycle of p squeezed into [b, e) of the cycle.
+-- Each cycle of p squeezed into ticks [b, e) of the cycle.
 local function compress(p, b, e)
-  b, e = tofrac(b), tofrac(e)
-  if b >= e or b < ZERO or e > ONE then return silence end
-  return _late(_fastGap(p, ONE / (e - b)), b)
+  if b >= e or b < 0 or e > T then return silence end
+  if b == 0 and e == T then return p end
+  local g = gcd(T, e - b)
+  return shift(_fastGap(p, T // g, (e - b) // g), b)
 end
 
 -- Sequence of {weight, pattern}: each takes its share of the cycle.
 local function timecat(items)
-  local total = ZERO
-  for _, it in ipairs(items) do total = total + tofrac(it[1]) end
-  if total.n == 0 then return silence end
-  local pats, pos = {}, ZERO
   local even = true
   for _, it in ipairs(items) do
-    if tofrac(it[1]) ~= ONE then even = false end
+    if it[1] ~= 1 then even = false end
   end
   if even then
+    local pats = {}
     for i, it in ipairs(items) do pats[i] = it[2] end
     return fastcat(pats)
   end
+  -- Integer weights (1.5 counts as 1500 thousandths).
+  local ints, scaleBy = {}, 1
   for _, it in ipairs(items) do
-    local w = tofrac(it[1])
-    if w.n > 0 then
-      pats[#pats + 1] = compress(it[2], pos / total, (pos + w) / total)
-      pos = pos + w
+    if not math.tointeger(it[1]) then scaleBy = 1000 end
+  end
+  local total = 0
+  for i, it in ipairs(items) do
+    ints[i] = math.floor(it[1] * scaleBy + 0.5)
+    total = total + ints[i]
+  end
+  if total <= 0 then return silence end
+  local pats, pos = {}, 0
+  for i, it in ipairs(items) do
+    if ints[i] > 0 then
+      pats[#pats + 1] = compress(it[2], scale(pos, T, total), scale(pos + ints[i], T, total))
+      pos = pos + ints[i]
     end
   end
   return stack(pats)
@@ -467,10 +511,10 @@ local function hash(x)
   return x & MASK
 end
 
--- A random number in [0, 1) that depends only on the time t (a fraction)
--- and the seed: the same pattern plays the same "random" notes every time.
+-- A random number in [0, 1) that depends only on the time t (ticks) and
+-- the seed: the same pattern plays the same "random" notes every time.
 local function randAt(t, seed)
-  local h = hash(t.n * 31337 + t.d * 7919 + (seed or 0) * 104729 + 1013)
+  local h = hash(t * 31337 + (seed or 0) * 104729 + 1013)
   h = hash(h + 1540483477)
   return (h % 1000003) / 1000003
 end
@@ -491,8 +535,7 @@ function M.randcat(pats, seed)
   local n = #pats
   if n == 1 then return pats[1] end
   return splitQueries(pattern(function(s)
-    local c = s.b:sam()
-    local i = math.floor(randAt(c, (seed or 0) + 7) * n) % n + 1
+    local i = math.floor(randAt(sam(s.b), (seed or 0) + 7) * n) % n + 1
     return pats[i].query(s)
   end))
 end
@@ -548,7 +591,7 @@ local function euclid(p, k, n, r)
   k, n, r = math.tointeger(tonumber(k)), math.tointeger(tonumber(n)), math.tointeger(tonumber(r or 0))
   if not (k and n and r) then error("euclid: whole numbers expected", 2) end
   local pats = {}
-  for i, on in ipairs(bjorklund(k, n, r)) do pats[i] = pure(on) end
+  for i, on in ipairs(bjorklund(k, n, r)) do pats[i] = on and pure(true) or silence end
   return struct(p, fastcat(pats))
 end
 
@@ -567,8 +610,8 @@ methods.density, methods.sparsity = methods.fast, methods.slow
 
 function methods.rev(p)
   return splitQueries(pattern(function(s)
-    local cycle = s.b:sam()
-    local nxt = cycle + ONE
+    local cycle = sam(s.b)
+    local nxt = cycle + T
     local function reflect(sp) return span(cycle + (nxt - sp.e), cycle + (nxt - sp.b)) end
     local out = {}
     for i, h in ipairs(p.query(reflect(s))) do
@@ -584,7 +627,7 @@ local function ofCycles(p, n, f, last)
   if not n or n < 1 then error("every: a count of 1 or more", 3) end
   local q = f(p)
   return splitQueries(pattern(function(s)
-    local c = s.b:cyc() % n
+    local c = cyc(s.b) % n
     if c == (last and n - 1 or 0) then return q.query(s) end
     return p.query(s)
   end))
@@ -599,7 +642,7 @@ function methods.palindrome(p) return ofCycles(p, 2, methods.rev, true) end
 function methods.iter(p, n)
   n = math.tointeger(num(n))
   return splitQueries(pattern(function(s)
-    return _early(p, frac(s.b:cyc() % n, n)).query(s)
+    return shift(p, -scale(cyc(s.b) % n, T, n)).query(s)
   end))
 end
 
@@ -607,15 +650,13 @@ end
 function methods.ply(p, n)
   n = math.tointeger(num(n))
   if not n or n < 1 then return p end
-  local fn = frac(n)
   return pattern(function(s)
     local out = {}
     for _, h in ipairs(p.query(s)) do
       if h.whole then
-        local step = (h.whole.e - h.whole.b) / fn
+        local len = h.whole.e - h.whole.b
         for i = 0, n - 1 do
-          local b = h.whole.b + step * i
-          local w = span(b, b + step)
+          local w = span(h.whole.b + scale(len, i, n), h.whole.b + scale(len, i + 1, n))
           local part = sect(w, h.part)
           if part and (part.b < part.e or w.b == w.e) then out[#out + 1] = hap(w, part, h.value) end
         end
@@ -630,7 +671,9 @@ function methods.euclid(p, k, n, r) return euclid(p, k, n, r) end
 function methods.euclidRot(p, k, n, r) return euclid(p, k, n, r) end
 
 -- Samples a continuous pattern n times per cycle.
-function methods.segment(p, n) return appLeft(_fast(pure(true), n), p, function(_, v) return v end) end
+function methods.segment(p, n)
+  return appLeft(_fast(pure(true), n), p, function(_, v) return v end)
+end
 
 function methods.degradeBy(p, amount) return _degradeBy(p, amount, 0) end
 function methods.degrade(p) return _degradeBy(p, 0.5, 0) end
@@ -667,7 +710,8 @@ function methods.seq(p, ...)
   table.insert(pats, 1, p)
   return fastcat(pats)
 end
-function methods.compress(p, b, e) return compress(p, b, e) end
+-- compress(p, b, e): b and e in cycles (0..1).
+function methods.compress(p, b, e) return compress(p, M.time(b), M.time(e)) end
 function methods.fmap(p, f) return fmap(p, f) end
 function methods.filter(p, f) return filterHaps(p, function(h) return f(h.value) end) end
 
@@ -676,7 +720,8 @@ function methods.range(p, lo, hi)
   return fmap(p, function(v) return num(v) * (hi - lo) + lo end)
 end
 
-function methods.query(p, b, e) return p.query(span(tofrac(b), tofrac(e))) end
+-- query(b, e): the events from cycle b to cycle e (numbers).
+function methods.query(p, b, e) return p.query(span(M.time(b), M.time(e))) end
 
 -- Arithmetic on values. On control tables (note, n...) the numbers add key
 -- by key; a plain number goes to the note (or n).
@@ -716,7 +761,7 @@ function M.slow(f, p) return methods.slow(reify(p), f) end
 function M.cat(...) return slowcat(list(...)) end
 function M.seq(...) return fastcat(list(...)) end
 function M.stack(...) return stack(list(...)) end
--- timecat({3, "c e g"}, {1, "b"})
+-- timeCat({3, "c e g"}, {1, "b"})
 function M.timeCat(...)
   local items = {}
   for i, it in ipairs({...}) do items[i] = {it[1], reify(it[2])} end
@@ -736,14 +781,15 @@ function M.arrange(...)
   end
   if total == 0 then return silence end
   return splitQueries(pattern(function(s)
-    local c = s.b:cyc()
+    local c = cyc(s.b)
     local loop, pos = c // total, c % total
     for _, sec in ipairs(secs) do
       if pos < sec.start + sec.n then
-        local d = raw(loop * sec.n + pos - sec.start - c, 1)
+        local d = (loop * sec.n + pos - sec.start - c) * T
         local out = {}
         for i, h in ipairs(sec.pat.query(span(s.b + d, s.e + d))) do
-          out[i] = hap(h.whole and span(h.whole.b - d, h.whole.e - d), span(h.part.b - d, h.part.e - d), h.value)
+          local w = h.whole
+          out[i] = hap(w and span(w.b - d, w.e - d), span(h.part.b - d, h.part.e - d), h.value)
         end
         return out
       end
@@ -751,18 +797,18 @@ function M.arrange(...)
     return {}
   end))
 end
-M.slowcat, M.fastcat = slowcat, fastcat
 
 local TAU = 2 * math.pi
-M.sine = signal(function(t) return (math.sin(TAU * t:pos():num()) + 1) / 2 end)
-M.cosine = _early(M.sine, frac(1, 4))
-M.saw = signal(function(t) return t:pos():num() end)
-M.isaw = signal(function(t) return 1 - t:pos():num() end)
+local function pos(t) return (t % T) / T end
+M.sine = signal(function(t) return (math.sin(TAU * pos(t)) + 1) / 2 end)
+M.cosine = shift(M.sine, -T // 4)
+M.saw = signal(function(t) return pos(t) end)
+M.isaw = signal(function(t) return 1 - pos(t) end)
 M.tri = signal(function(t)
-  local x = t:pos():num()
+  local x = pos(t)
   return x < 0.5 and 2 * x or 2 - 2 * x
 end)
-M.square = signal(function(t) return t:pos():num() < 0.5 and 0 or 1 end)
+M.square = signal(function(t) return pos(t) < 0.5 and 0 or 1 end)
 M.rand = signal(function(t) return randAt(t, 99) end)
 function M.irand(n) return fmap(M.rand, function(v) return math.floor(v * n) end) end
 function M.run(n) -- 0 1 2 .. n-1

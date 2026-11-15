@@ -322,10 +322,11 @@ local function translate(src)
     end
     return rest
   end)
-  -- Methods on string literals: `<a b>`.add(12) -> ([[<a b>]]).add(12).
-  code = code:gsub("\1(%d+)\2(%s*[%.:][%a_])", function(k, rest)
+  -- Methods on string literals: `<a b>`.add(12) -> ([[<a b>]]):add(12)
+  -- (":" so that the method gets the string).
+  code = code:gsub("\1(%d+)\2(%s*)[%.:]([%a_])", function(k, sp, c)
     if isComment[tonumber(k)] then return nil end
-    return "(\1" .. k .. "\2)" .. rest
+    return "(\1" .. k .. "\2)" .. sp .. ":" .. c
   end)
   return code, function(s)
     return (s:gsub("\1(%d+)\2", function(k) return saved[tonumber(k)] end))
@@ -383,8 +384,21 @@ M.base = base
 
 -- --------------------------------------------------------------- evaluation
 
+-- String methods while code runs: the string library, then the pattern
+-- methods on the string as mini-notation.
+local stringIndex = setmetatable({}, {__index = function(s, k)
+  if methods[k] then
+    return function(str, ...)
+      local p = P.reify(str)
+      return p[k](p, ...)
+    end
+  end
+end})
+for k, f in pairs(string) do stringIndex[k] = f end
+
 -- Runs code. Returns {pattern =, cps =, log =} or nil and the error.
 function M.eval(src)
+  mini.newRun()
   local result = {log = {}}
   local collected = {}
   local env = setmetatable({}, {__index = base})
@@ -408,7 +422,12 @@ function M.eval(src)
   end
   methods.p = methods.play
 
+  -- How long each step takes (ms), when a clock is given (benchmarks).
+  local clock = M.clock
+  local t0 = clock and clock()
   local masked, restore = translate(src)
+  local t1 = clock and clock()
+  if mini.busy then mini.busy() end
   local code = restore(masked)
   -- An expression first; else statements, the last one returned when it
   -- can be. Lines are looked at with the strings masked, so that a line
@@ -436,15 +455,16 @@ function M.eval(src)
   end
   -- While the code runs, strings have the pattern methods too:
   -- ("<a b>"):add(12), as JS strings in Strudel.
+  -- (A table first: the string functions are found at the speed of a
+  -- table, only other names reach the function.)
   local smt = getmetatable("")
   local sindex = smt.__index
-  smt.__index = function(s, k)
-    local f = string[k]
-    if f ~= nil then return f end
-    if methods[k] then return P.reify(s)[k] end
-  end
+  smt.__index = stringIndex
   C.ignoredUsed = {}
+  local t2 = clock and clock()
+  if mini.busy then mini.busy() end
   local ok, value = pcall(chunk)
+  if clock then result.times = {translate = t1 - t0, compile = t2 - t1, run = clock() - t2} end
   smt.__index = sindex
   methods.play = saved
   methods.p = saved

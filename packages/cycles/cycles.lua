@@ -14,6 +14,7 @@ if not termina or not termina.synth or not termina.synth.at then
 end
 local term, key, sys, fs, synth = termina.term, termina.key, termina.sys, termina.fs, termina.synth
 local dsl = require "cycles.dsl"
+local mini = require "cycles.mini"
 local Player = require "cycles.player"
 local examples = require "cycles.examples"
 
@@ -102,6 +103,10 @@ local scr = {}
 do
   local bc, ba, fc, fa = {}, {}, {}, {}
   function scr.clear() bc, ba = {}, {} end
+  -- Clears rows y0..y1 only (the status rows, while the code stays).
+  function scr.clearRows(y0, y1)
+    for k = y0 * COLS + 1, (y1 + 1) * COLS do bc[k], ba[k] = nil, nil end
+  end
   function scr.put(x, y, s, a)
     local n = 0
     for _, c in utf8.codes(s) do
@@ -117,8 +122,8 @@ do
   function scr.bar(y, a)
     for x = 0, COLS - 1 do scr.put(x, y, " ", a) end
   end
-  function scr.flush()
-    for y = 1, ROWS - 1 do
+  function scr.flush(y0, y1)
+    for y = y0 or 1, y1 or ROWS - 1 do
       for x = 0, COLS - 1 do
         local k = y * COLS + x + 1
         local ch, a = bc[k] or " ", ba[k] or TEXT
@@ -205,7 +210,33 @@ end
 
 local HELP = "F5 play  F6 stop  F2 example  ^S save  Esc quit"
 
-local function draw()
+-- The status rows only: while music plays, they change and the code does
+-- not (redrawing all of it would cost the ESP32 time the music needs).
+local function drawStatus()
+  scr.clearRows(STATUS, ROWS - 1)
+  scr.bar(STATUS, BAR)
+  local state
+  if playing and player.pattern then
+    state = string.format(" \u{25BA} cycle %.1f", player:now())
+  else
+    state = " \u{25A0} stopped"
+  end
+  local info = string.format("%s  cps %s  voices %s", state, player:cps(), card and voicesText() or "(no card)")
+  if card then
+    local _, late = synth.stats()
+    info = info .. string.format("  late %dms", late or 0)
+  end
+  scr.put(0, STATUS, info, BAR)
+  scr.put(1, STATUS + 1, message, messageAttr)
+  scr.put(1, STATUS + 2, HELP, DIM)
+end
+
+local function draw(statusOnly)
+  if statusOnly then
+    drawStatus()
+    scr.flush(STATUS, ROWS - 1)
+    return
+  end
   scr.clear()
   local now = sys.millis()
   local ta = now < flashUntil and TITLE_ON or TITLE
@@ -223,23 +254,7 @@ local function draw()
     if not l then break end
     st = drawLine(TOP + r, l, st)
   end
-
-  scr.bar(STATUS, BAR)
-  local state
-  if playing and player.pattern then
-    state = string.format(" \u{25BA} cycle %.1f", player:now())
-  else
-    state = " \u{25A0} stopped"
-  end
-  local cps = player.cps
-  local info = string.format("%s  cps %s  voices %s", state, tostring(cps), card and voicesText() or "(no card)")
-  if card then
-    local _, late = synth.stats()
-    info = info .. string.format("  late %dms", late or 0)
-  end
-  scr.put(0, STATUS, info, BAR)
-  scr.put(1, STATUS + 1, message, messageAttr)
-  scr.put(1, STATUS + 2, HELP, DIM)
+  drawStatus()
   scr.flush()
   -- The text cursor.
   local sx, sy = (utf8.len(lines[cy]:sub(1, cx - 1)) or cx - 1) - left, TOP + cy - top
@@ -340,8 +355,16 @@ end
 
 -- --------------------------------------------------------------- playing
 
+-- Running a long piece of code takes the ESP32 a second or more: the music
+-- playing goes on meanwhile (queued further ahead first, then topped up
+-- each time a new mini-notation string is parsed).
 local function evaluate()
+  if playing then
+    pcall(player.tick, player, 800)
+    mini.busy = function() pcall(player.tick, player) end
+  end
   local r, err = dsl.eval(text())
+  mini.busy = nil
   if not r then
     say(err, WARN)
     return
@@ -447,9 +470,10 @@ local function main()
   if not card then say("No sound card: patterns run but nothing is heard", WARN) end
   player = startPlayer()
   draw()
-  local lastDraw = 0
+  local lastStatus = 0
+  local flashing = false
   while true do
-    local dirty = false
+    local dirty, status = false, false
     for e in key.poll do
       dirty = true
       if e.type == "char" then
@@ -467,17 +491,25 @@ local function main()
     if qerr then
       playing = false
       say(qerr, WARN)
-      dirty = true
+      status = true
     elseif warn and warn ~= message then
       say(warn, WARN)
-      dirty = true
+      status = true
     end
     local now = sys.millis()
-    if playing and now - lastDraw >= 100 then dirty = true end
-    if now < flashUntil + 100 then dirty = true end
+    -- The status line 4 times a second while playing.
+    if playing and now - lastStatus >= 250 then status = true end
+    -- The title flashes when the code is played: once on, once off.
+    local flash = now < flashUntil
+    if flash ~= flashing then
+      flashing, dirty = flash, true
+    end
     if dirty then
       draw()
-      lastDraw = now
+      lastStatus = now
+    elseif status then
+      draw(true)
+      lastStatus = now
     end
     sys.sleep(10)
   end

@@ -145,10 +145,29 @@ local function control(name)
   end
 end
 
+-- Constant controls t added to the events of p. Several in a row
+-- (.s("square").clip(0.7).gain(0.3)) are merged into one table, added
+-- once per event.
+local function setControls(p, t)
+  local base = p._ctlBase
+  if base then
+    t = union(p._ctl, t)
+  else
+    base = p
+  end
+  local q = P.fmap(base, function(v) return union(v, t) end)
+  q._ctlBase, q._ctl = base, t
+  return q
+end
+
 for name in pairs(CONVERT) do
   local make = control(name)
   M[name] = make
-  methods[name] = function(p, x) return P.appLeft(p, make(x), union) end
+  methods[name] = function(p, x)
+    local c = make(x)
+    if c._pure and type(c._v) == "table" then return setControls(p, c._v) end
+    return P.appLeft(p, c, union)
+  end
 end
 for alias, name in pairs(ALIAS) do
   M[alias] = M[name]

@@ -24,30 +24,30 @@ end
 
 local frac, span = P.frac, P.span
 
--- Onsets of p in cycles [b, e) as "value@time" strings, sorted by time.
+-- Onsets of p in cycles [b, e) as "value@time" strings, sorted by time,
+-- then by text.
 local function events(p, b, e)
-  local hs = p.query(span(P.tofrac(b or 0), P.tofrac(e or 1)))
-  local out = {}
-  for _, h in ipairs(hs) do
-    if P.onset(h) then out[#out + 1] = h end
-  end
-  table.sort(out, function(x, y)
-    if x.whole.b == y.whole.b then return tostring(x.value) < tostring(y.value) end
-    return x.whole.b < y.whole.b
-  end)
+  local hs = p.query(span(P.time(b or 0), P.time(e or 1)))
   local s = {}
-  for i, h in ipairs(out) do
-    local v = h.value
-    if type(v) == "table" then
-      local keys = {}
-      for k in pairs(v) do keys[#keys + 1] = k end
-      table.sort(keys)
-      local kv = {}
-      for j, k in ipairs(keys) do kv[j] = k .. "=" .. tostring(v[k]) end
-      v = table.concat(kv, ",")
+  for _, h in ipairs(hs) do
+    if P.onset(h) then
+      local v = h.value
+      if type(v) == "table" then
+        local keys = {}
+        for k in pairs(v) do keys[#keys + 1] = k end
+        table.sort(keys)
+        local kv = {}
+        for j, k in ipairs(keys) do kv[j] = k .. "=" .. tostring(v[k]) end
+        v = table.concat(kv, ",")
+      end
+      s[#s + 1] = {b = h.whole.b, text = tostring(v) .. "@" .. P.show(h.whole.b) .. "-" .. P.show(h.whole.e)}
     end
-    s[i] = tostring(v) .. "@" .. tostring(h.whole.b) .. "-" .. tostring(h.whole.e)
   end
+  table.sort(s, function(x, y)
+    if x.b == y.b then return x.text < y.text end
+    return x.b < y.b
+  end)
+  for i, x in ipairs(s) do s[i] = x.text end
   return table.concat(s, " ")
 end
 
@@ -59,15 +59,21 @@ local function miniEvents(src, b, e)
   return events(p, b, e)
 end
 
--- ----------------------------------------------------------------- fractions
-check("1/3+2/3", frac(1, 3) + frac(2, 3) == P.ONE)
+-- -------------------------------------------------------------------- time
+check("1/3+2/3", frac(1, 3) + frac(2, 3) == P.T)
 check("1/2<2/3", frac(1, 2) < frac(2, 3))
-check("-1/2 floor", frac(-1, 2):sam() == frac(-1))
-check("0.25", P.tofrac(0.25) == frac(1, 4))
-check("0.1", P.tofrac(0.1) == frac(1, 10))
-check("0.6", P.tofrac(0.6) == frac(3, 5))
-check("big cmp", frac(4000000 * 7 + 1, 7) < frac(4000000 * 3 + 1, 3))
-check("big cmp 2", frac(4000001 * 7, 7) > frac(4000000 * 3 + 2, 3))
+check("-1/2 sam", P.sam(frac(-1, 2)) == frac(-1))
+check("0.25", P.time(0.25) == frac(1, 4))
+check("1000.5", P.time(1000.5) == frac(2001, 2))
+check("show", P.show(frac(1, 3)) == "1/3" and P.show(frac(-1, 4)) == "-1/4" and P.show(frac(2)) == "2")
+do
+  local n, d = P.ratio(0.6)
+  check("ratio 0.6", n == 3 and d == 5)
+  n, d = P.ratio(0.1)
+  check("ratio 0.1", n == 1 and d == 10)
+end
+check("scale big", P.scale(90000 * P.T + 7, 16, 15) == (90000 * P.T + 7) // 15 * 16 + ((90000 * P.T + 7) % 15 * 16) // 15)
+check("scale exact", P.scale(frac(5, 3), 3, 5) == frac(1))
 
 -- ------------------------------------------------------------ mini-notation
 same("seq", miniEvents("a b c"), "a@0-1/3 b@1/3-2/3 c@2/3-1")
@@ -126,10 +132,30 @@ same("off", events(m.off(mini.parse("a"), 0.5, function(x) return m.add(x, 1) en
 same("add", events(m.add(mini.parse("1 2"), "10")), "11@0-1/2 12@1/2-1")
 same("segment", events(m.segment(P.saw, 4)), "0.0@0-1/4 0.25@1/4-1/2 0.5@1/2-3/4 0.75@3/4-1")
 same("struct", events(m.struct(P.pure("x"), "t ~ t t")), "x@0-1/4 x@1/2-3/4 x@3/4-1")
+same("weight 1.5", miniEvents("a@1.5 b"), "a@0-3/5 b@3/5-1")
+do
+  -- 11 steps: 11 does not divide the ticks of a cycle; steps stay end to
+  -- end, none lost, none twice, over many small queries too.
+  local p = mini.parse("0 1 2 3 4 5 6 7 8 9 10")
+  local seen, ok, last = {}, true, nil
+  for q = 0, 47 do
+    for _, h in ipairs(p.query(span(P.T * q // 48, P.T * (q + 1) // 48))) do
+      if P.onset(h) then
+        if seen[h.value] then ok = false end
+        seen[h.value] = true
+      end
+    end
+  end
+  local n = 0
+  for _ in pairs(seen) do n = n + 1 end
+  check("11 steps", ok and n == 11, n)
+end
 do
   local p = m.fast(mini.parse("[a b c]"), 7)
-  local hs = p.query(span(frac(100000), frac(100001)))
-  check("far cycles", #hs == 21 and hs[1].whole.b >= frac(100000), #hs)
+  -- Cycle 10000, made 7 times faster: inner time near 70000 cycles, still
+  -- within 32 bits.
+  local hs = p.query(span(frac(10000), frac(10001)))
+  check("far cycles", #hs == 21 and hs[1].whole.b >= frac(10000), #hs)
 end
 
 -- ----------------------------------------------------------------- controls
@@ -231,7 +257,7 @@ function sqr(x){
     local res, err = dsl.eval(ex[2])
     check("example " .. ex[1], res and res.pattern, err)
     if res and res.pattern then
-      local ok, e = pcall(res.pattern.query, span(P.ZERO, frac(8)))
+      local ok, e = pcall(res.pattern.query, span(0, frac(8)))
       check("example query " .. ex[1], ok, e)
       if ok then
         for _, h in ipairs(e) do
@@ -270,7 +296,8 @@ do
     if math.abs(notes[i].t - notes[i - 1].t - 500) > 1 then evenly = false end
   end
   check("player timing", evenly)
-  check("player first", notes[1] and notes[1].t == 1000, notes[1] and notes[1].t)
+  -- Cycle 0 starts 100 ms after play: time for the first query.
+  check("player first", notes[1] and notes[1].t == 1100, notes[1] and notes[1].t)
   local voices = {}
   for _, e in ipairs(notes) do voices[e.args[1]] = true end
   -- Each kick is silent after 151 ms: the same voice serves them all.
